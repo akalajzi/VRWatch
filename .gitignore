@@ -1,0 +1,22 @@
+node_modules/
+dist/
+runtime/
+downloads/
+artifacts/
+*.log
+__pycache__/
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+
+# Private validation and planning must never be staged for publication.
+private/
+docs/validation/
+output/
+branding/concepts/
+branding/production-prompts.md
+*.har
+*.pcap
+*.pcapng

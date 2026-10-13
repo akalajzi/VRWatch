@@ -1,0 +1,36 @@
+--- a/chrome/browser/ui/views/extensions/vrwatch_hud_controller.cc
++++ b/chrome/browser/ui/views/extensions/vrwatch_hud_controller.cc
+@@ -37,12 +37,13 @@
+   if (view_) browser_view_->RemoveChildViewT(view_.ExtractAsDangling());
+ }
+ gfx::Rect VrwatchHudController::Bounds(const gfx::Rect& content, bool picker) {
+-  gfx::Rect available = content;
+-  available.Inset(16);
+-  const int width = std::max(0, std::min(960, available.width()));
+-  const int height = std::max(0, std::min(picker ? 640 : 184, available.height()));
+-  return gfx::Rect(available.CenterPoint().x() - width / 2,
+-                   available.bottom() - height, width, height);
++  const int width = std::max(0, content.width());
++  // The shared toolbar uses two rows at narrow widths. It floats over the page
++  // at the top; the browser layout never reserves space for this host.
++  const int navigation_height = width <= 760 ? 164 : 112;
++  const int height = std::max(
++      0, std::min(picker ? 640 : navigation_height, content.height()));
++  return gfx::Rect(content.x(), content.y(), width, height);
+ }
+ bool VrwatchHudController::visible() const { return mode_ != "closed"; }
+ bool VrwatchHudController::Blocked() const {
+--- a/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc
++++ b/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc
+@@ -74,6 +74,11 @@
+     gfx::Rect page(size);
+     EXPECT_TRUE(page.Contains(VrwatchHudController::Bounds(page, true)));
+     EXPECT_TRUE(page.Contains(VrwatchHudController::Bounds(page, false)));
++    for (bool picker : {false, true}) {
++      const auto bounds = VrwatchHudController::Bounds(page, picker);
++      EXPECT_EQ(page.origin(), bounds.origin());
++      EXPECT_EQ(page.width(), bounds.width());
++    }
+   }
+ }
+ IN_PROC_BROWSER_TEST_F(VrwatchHudBrowserTest, NavigationAndSecurityDismissWithoutStealingFocus) {

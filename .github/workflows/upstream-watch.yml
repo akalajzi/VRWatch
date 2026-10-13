@@ -1,0 +1,98 @@
+name: Upstream watch
+
+on:
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      review_event:
+        description: Optional full event ID to review instead of fetching sources
+        type: string
+      decision:
+        description: Decision for review_event
+        type: choice
+        options: [watch, defer, ignore, candidate]
+      note:
+        description: Reason for the review decision
+        type: string
+      evidence:
+        description: Adoption record link or path for a candidate decision
+        type: string
+      revisit_on:
+        description: Next review date (YYYY-MM-DD) for watch or defer
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-watch-state
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: ${{ vars.VRWATCH_UPSTREAM_WATCH == 'enabled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Restore durable state
+        shell: bash
+        run: |
+          set -euo pipefail
+          export UPSTREAM_STATE="$RUNNER_TEMP/upstream-watch-state"
+          if git ls-remote --exit-code --heads origin upstream-watch-state; then
+            git fetch origin refs/heads/upstream-watch-state
+            git worktree add --detach "$UPSTREAM_STATE" FETCH_HEAD
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then exit "$status"; fi
+            git worktree add --detach "$UPSTREAM_STATE" HEAD
+            git -C "$UPSTREAM_STATE" switch --orphan upstream-watch-state
+          fi
+          printf '.watch.lock\n' > "$UPSTREAM_STATE/.gitignore"
+          printf 'UPSTREAM_STATE=%s\nSTATE_READY=true\n' "$UPSTREAM_STATE" >> "$GITHUB_ENV"
+      - name: Check or review upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVIEW_EVENT: ${{ inputs.review_event }}
+          DECISION: ${{ inputs.decision }}
+          NOTE: ${{ inputs.note }}
+          EVIDENCE: ${{ inputs.evidence }}
+          REVISIT_ON: ${{ inputs.revisit_on }}
+          REVIEWER: ${{ github.actor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--state-dir "$UPSTREAM_STATE")
+          if [ -n "$REVIEW_EVENT" ]; then
+            args+=(--review "$REVIEW_EVENT" --decision "$DECISION" --note "$NOTE" --reviewer "$REVIEWER")
+            if [ -n "$EVIDENCE" ]; then args+=(--evidence "$EVIDENCE"); fi
+            if [ -n "$REVISIT_ON" ]; then args+=(--revisit-on "$REVISIT_ON"); fi
+          fi
+          python3 scripts/check-upstream.py "${args[@]}"
+      - name: Persist observations and review queue
+        if: ${{ always() && env.STATE_READY == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$UPSTREAM_STATE/.git" || test -f "$UPSTREAM_STATE/.git"
+          git -C "$UPSTREAM_STATE" config user.name 'github-actions[bot]'
+          git -C "$UPSTREAM_STATE" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$UPSTREAM_STATE" add --all
+          if ! git -C "$UPSTREAM_STATE" diff --cached --quiet; then
+            git -C "$UPSTREAM_STATE" commit -m 'Record upstream observations and review decisions'
+            git -C "$UPSTREAM_STATE" push origin HEAD:refs/heads/upstream-watch-state
+          fi
+      - name: Show report
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import html, os
+          from pathlib import Path
+          report = Path(os.environ.get('UPSTREAM_STATE', os.environ['RUNNER_TEMP'] + '/upstream-watch-state')) / 'latest.txt'
+          text = report.read_text() if report.exists() else 'No report; inspect the failed workflow step.'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('<pre>' + html.escape(text) + '</pre>\n')
+          PY

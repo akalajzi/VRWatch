@@ -1,0 +1,26 @@
+/* Wide, persistent targets for the headset's controller pointer. */
+* {
+  scrollbar-width: auto !important;
+  scrollbar-color: auto !important;
+}
+::-webkit-scrollbar {
+  width: 18px !important;
+  height: 18px !important;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: #191a1f !important;
+}
+::-webkit-scrollbar-thumb {
+  min-width: 64px !important;
+  min-height: 64px !important;
+  border: 2px solid #191a1f !important;
+  border-radius: 9px !important;
+  background: #92959e !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a7dfd9 !important;
+}
+::-webkit-scrollbar-thumb:active {
+  background: #d1f4ef !important;
+}

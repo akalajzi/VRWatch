@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# VRWatch launcher. Frame integration adapted from Chrome XR; see NOTICE.md.
+set -euo pipefail
+state=${VRWATCH_STATE:-$HOME/.local/share/vrwatch}
+profile=${VRWATCH_PROFILE:-$HOME/.config/vrwatch}
+browser=${VRWATCH_BROWSER:-}
+if [[ -z $browser && -f $state/browser-path ]]; then read -r browser < "$state/browser-path"; fi
+[[ -n $browser && -x $browser ]] || { echo 'VRWatch browser not found. Run frame/install.sh.' >&2; exit 1; }
+
+# Steam's overlay preload prevents Chrome's GPU process from starting on Frame.
+if [[ -n ${LD_PRELOAD:-} ]]; then
+  keep=()
+  IFS=' :' read -r -d '' -a libs < <(printf '%s' "$LD_PRELOAD") || true
+  for lib in "${libs[@]}"; do
+    [[ -z $lib || $lib == *gameoverlayrenderer.so ]] || keep+=("$lib")
+  done
+  if (( ${#keep[@]} )); then
+    LD_PRELOAD=${keep[0]}
+    for lib in "${keep[@]:1}"; do LD_PRELOAD+=":$lib"; done
+    export LD_PRELOAD
+  else unset LD_PRELOAD
+  fi
+fi
+
+export CHROME_DESKTOP=vrwatch.desktop
+cmd=("$browser" --user-data-dir="$profile" --enable-features=OpenXR --class=VRWatch
+  --ozone-platform=x11 --touch-events=enabled --no-first-run --no-default-browser-check
+  --disable-features=NtpFooter)
+# Work around the reported Frame noise patches with CPU page-tile rasterization.
+# Rasterize page tiles on the CPU while retaining GPU compositing and WebGL/XR.
+[[ ${VRWATCH_GPU_RASTERIZATION:-0} == 1 ]] || cmd+=(--disable-gpu-rasterization)
+# Match the working Chrome XR configuration while SteamVR's sandbox fixes roll out.
+# Set VRWATCH_SECCOMP=1 on an OS version that supports keeping the filter enabled.
+if [[ ${VRWATCH_SECCOMP:-0} != 1 ]]; then
+  # Chrome's test-type switch suppresses startup infobars without adding an
+  # automation banner. This hides the warning; it does not restore the filter.
+  cmd+=(--disable-seccomp-filter-sandbox --test-type=vrwatch)
+fi
+[[ ${VRWATCH_BASIC_PASSWORD_STORE:-0} == 1 ]] && cmd+=(--password-store=basic)
+cmd+=("$@")
+# Official Chrome's CDP loader is session-scoped. Provision on every start,
+# before navigating to the extension UI; no manual Developer mode step.
+cmd=(python3 "$state/browser-host.py" "${cmd[@]}")
+
+# Run outside Steam's process tree for browser-panel input compatibility.
+# Stopping the Steam shortcut stops this service. Page scrolling has explicit
+# extension controls and a handler for Frame's mixed mouse/pen drag events.
+if [[ ${VRWATCH_STEAM_PANEL:-0} == 1 ]] || ! command -v systemd-run >/dev/null; then
+  exec "${cmd[@]}"
+fi
+read -r launcher_stat < "/proc/$$/stat"
+read -r -a launcher_fields <<< "${launcher_stat##*) }"
+env_args=(-E "VRWATCH_LAUNCHER_PID=$$" -E "VRWATCH_LAUNCHER_START_TIME=${launcher_fields[19]}")
+for name in $(compgen -e); do
+  case $name in
+    INVOCATION_ID|JOURNAL_STREAM|MANAGERPID|SYSTEMD_EXEC_PID|NOTIFY_SOCKET|MEMORY_PRESSURE_*|LISTEN_*|VRWATCH_LAUNCHER_PID|VRWATCH_LAUNCHER_START_TIME) ;;
+    *) env_args+=(-E "$name") ;;
+  esac
+done
+unit=vrwatch-$$
+trap 'systemctl --user stop --no-block "$unit" 2>/dev/null || true' EXIT
+trap 'exit 0' TERM INT HUP
+systemd-run --user --quiet --collect --same-dir --unit="$unit" --service-type=exec --expand-environment=no --property=TimeoutStopSec=3s --property=KillMode=control-group "${env_args[@]}" "${cmd[@]}"
+while systemctl --user is-active --quiet "$unit"; do sleep 1; done

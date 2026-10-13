@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VRWatch</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="home.css">
+  <link rel="stylesheet" href="scrollbars.css">
+</head>
+<body>
+  <main>
+    <div class="home-heading"><div class="home-identity"><h1><img class="home-wordmark" src="branding/vrwatch-wordmark-color-light.svg" width="2086" height="338" alt="VRWatch"></h1><span class="runtime-status" id="runtime-status"><span class="status-dot"></span>Checking VR</span></div><nav class="home-tools" aria-label="Home navigation"><a class="home-button" href="bookmarks.html"><span data-home-icon="bookmark" aria-hidden="true"></span>Bookmarks</a><a class="home-button" href="settings.html"><span data-home-icon="settings" aria-hidden="true"></span>Settings</a></nav></div>
+    <p id="url-error" class="error" role="alert"></p>
+    <section class="bookmarks-section" aria-labelledby="bookmarks-title">
+      <div class="section-heading"><div><h2 id="bookmarks-title">Quick links</h2></div><span class="section-count">4 destinations</span></div>
+      <p id="quick-links-empty" class="empty-state" hidden>Pin bookmarks to add Quick Links to Home. <a href="bookmarks.html">Choose bookmarks →</a></p>
+      <div class="bookmark-grid">
+        <a class="bookmark google" href="https://www.google.com/" data-history aria-label="Google — Search the web"><span class="tile-arrow" aria-hidden="true">↗</span><div class="tile-art google-mark" aria-hidden="true">G</div><div class="tile-label"><h2>Google</h2><p>Search the web</p></div><span class="format-tag"></span></a>
+        <a class="bookmark youtube" href="https://www.youtube.com/@360/videos" data-history aria-label="YouTube VR — Virtual Reality channel"><span class="tile-arrow" aria-hidden="true">↗</span><div class="tile-art"><svg class="youtube-mark" viewBox="0 0 100 70" aria-hidden="true"><circle cx="50" cy="35" r="28" fill="none" stroke="#f4ba54" stroke-width="3"></circle><path d="M44 23 62 35 44 47Z" fill="#f4ba54"></path></svg></div><div class="tile-label"><h2>YouTube VR</h2><p>Virtual Reality channel</p></div><span class="format-tag">360° · VR180</span></a>
+        <a class="bookmark airpano" href="https://www.airpano.com/360video_list.php" data-history aria-label="AirPano 360 — 360 degree travel videos"><span class="tile-arrow" aria-hidden="true">↗</span><div class="tile-art"><svg class="airpano-mark" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="35"></circle><ellipse cx="50" cy="50" rx="16" ry="35"></ellipse><path d="M15 50h70M21 31h58M21 69h58"></path><path class="airpano-flight" d="m65 20 22-8-8 22-4-11Z"></path></svg></div><div class="tile-label"><h2>AirPano 360</h2><p>Immersive travel videos</p></div><span class="format-tag">360°</span></a>
+        <a class="bookmark library" href="http://127.0.0.1:4179/library/" data-history aria-label="Media Library — Connected drives and NAS"><span class="tile-arrow" aria-hidden="true">↗</span><div class="tile-art"><svg class="library-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="m10 10 6 4-6 4Z"/></svg></div><div class="tile-label"><h2>Media Library</h2><p>Connected drives and NAS</p></div><span class="format-tag"></span></a>
+      </div>
+    </section>
+    <section class="recent-section" aria-labelledby="recent-title"><div class="section-heading"><h2 id="recent-title">Recently opened</h2><button id="clear-recent" class="text-button" hidden>Clear history</button></div><p id="recent-hint" class="recent-hint" hidden>Scroll for older sites.</p><div id="recent-list" role="region" aria-labelledby="recent-title" aria-describedby="recent-hint" tabindex="0"><p class="empty-state">Sites you open will appear here.</p></div></section>
+    <footer><img class="footer-wordmark" src="branding/vrwatch-wordmark-mono.svg" width="2086" height="338" alt="VRWatch"><p>Look for <strong>Watch in VR</strong> beside a supported video.</p></footer>
+  </main>
+  <script src="home.js"></script>
+</body>
+</html>

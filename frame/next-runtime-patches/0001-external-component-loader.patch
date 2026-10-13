@@ -1,0 +1,146 @@
+--- a/chrome/browser/extensions/component_loader.cc
++++ b/chrome/browser/extensions/component_loader.cc
+@@ -9,6 +9,8 @@
+ #include <string_view>
+ 
+ #include "base/command_line.h"
++#include "base/base_paths.h"
++#include "base/threading/thread_restrictions.h"
+ #include "base/feature_list.h"
+ #include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+@@ -673,6 +675,35 @@
+ 
+ void ComponentLoader::AddDefaultComponentExtensions(
+     bool skip_session_components) {
++#if BUILDFLAG(IS_LINUX)
++  // The bundle is deliberately external to GRIT. Load synchronously at startup
++  // so the first extension URL cannot race component registration. Do this
++  // before the background-component test switch: VRWatch's seccomp workaround
++  // uses --test-type on normal launches. Never replace/uninstall the old ID.
++  if (!profile_->IsOffTheRecord() && !profile_->IsGuestSession() &&
++      !base::CommandLine::ForCurrentProcess()->HasSwitch(
++          "disable-vrwatch-component")) {
++    base::FilePath executable_dir;
++    if (base::PathService::Get(base::DIR_EXE, &executable_dir)) {
++      const auto root = executable_dir.AppendASCII("vrwatch-extension");
++      std::string contents;
++      base::ScopedAllowBlocking allow_startup_manifest_read;
++      if (base::ReadFileToStringWithMaxSize(
++              root.AppendASCII("manifest.json"), &contents, 1024 * 1024)) {
++        auto manifest = ParseManifest(contents);
++        if (manifest && TryGenerateId(*manifest) ==
++                            "bkjijegjmneghekcknijmioimbahmfap") {
++          Add(std::move(*manifest), root);
++        } else {
++          LOG(ERROR) << "VRWatch component manifest identity mismatch";
++        }
++      } else {
++        LOG(ERROR) << "VRWatch component bundle missing or unreadable";
++      }
++    }
++  }
++#endif
++
+   // Do not add component extensions that have background pages here -- add them
+   // to AddDefaultComponentExtensionsWithBackgroundPages.
+ #if BUILDFLAG(IS_CHROMEOS)
+--- a/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
++++ b/chrome/browser/extensions/component_extensions_allowlist/allowlist.cc
+@@ -35,6 +35,7 @@
+ 
+ bool IsComponentExtensionAllowlisted(const std::string& extension_id) {
+   constexpr auto kAllowed = base::MakeFixedFlatSet<std::string_view>({
++      "bkjijegjmneghekcknijmioimbahmfap",  // VRWatch external component.
+       extension_misc::kAimEligibilityExtensionId,
+       extension_misc::kContextualTasksExtensionId,
+       extension_misc::kGlicExtensionId,
+--- a/base/threading/thread_restrictions.h
++++ b/base/threading/thread_restrictions.h
+@@ -292,6 +292,7 @@
+ class LinuxKeyRotationCommand;
+ }  // namespace enterprise_connectors
+ namespace extensions {
++class ComponentLoader;
+ class InstalledLoader;
+ class UnpackedInstaller;
+ }  // namespace extensions
+@@ -638,6 +639,8 @@
+   friend class cronet::CronetPrefsManager;
+   friend class crypto::ScopedAllowBlockingForNSS;  // http://crbug.com/59847
+   friend class drive::FakeDriveService;
++  // One bounded manifest read before initial component-extension navigation.
++  friend class extensions::ComponentLoader;
+   friend class extensions::InstalledLoader;
+   friend class extensions::UnpackedInstaller;
+   friend class font_service::internal::MappedFontFile;
+--- a/chrome/browser/extensions/component_loader_unittest.cc
++++ b/chrome/browser/extensions/component_loader_unittest.cc
+@@ -12,6 +12,8 @@
+ #include <string_view>
+ 
+ #include "base/command_line.h"
++#include "base/base_paths.h"
++#include "base/json/json_writer.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+@@ -225,6 +227,58 @@
+ #endif
+ };
+ 
++
++#if BUILDFLAG(IS_LINUX)
++TEST_F(ComponentLoaderTest, VRWatchExternalBundleIdentityAndVersion) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  base::ScopedPathOverride executable_dir(base::DIR_EXE, directory.GetPath());
++  const auto root = directory.GetPath().AppendASCII("vrwatch-extension");
++  ASSERT_TRUE(base::CreateDirectory(root));
++  constexpr char kId[] = "bkjijegjmneghekcknijmioimbahmfap";
++  auto manifest = base::DictValue()
++      .Set("manifest_version", 3)
++      .Set("name", "VRWatch")
++      .Set("version", "0.1.0")
++      .Set("key", "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApkAk+wANInwx9fRrtdkUZJmwfZiYoS/BZKA3reqNn3NodGlnCjKL7KjuZvT9CCLAqFAEcpd/apHdcaYyBBGGvW3zTLu22BV0TgTJdvKixeVr0UhUUMr8Ate41/l6EdS9jcDDQyRvU785I+Ak46e+ZWMOmCvzhZ/wfFJw0Q8wRcBuYjoDCwWTi+ariA217NdxKeOJWgto++s3a2XEhjHi64m4fJnNziDfewb4vzUKnouQwypWsCfbPMH+MWZwyolbrCHvXCneokTsTIg8Wkrl0NkfyggU2Hw6RG7MPw9VWyMtQm94eXC/OUSrgMLWtmDSu+W9hTxvW9NeuiKMPahkPQIDAQAB");
++  ASSERT_TRUE(base::WriteFile(root.AppendASCII("manifest.json"),
++                             *base::WriteJson(manifest)));
++  component_loader_->set_ignore_allowlist_for_testing(false);
++  component_loader_->AddDefaultComponentExtensions(false);
++  component_loader_->LoadAll();
++  const auto* extension = ExtensionRegistry::Get(profile())
++                              ->enabled_extensions().GetByID(kId);
++  ASSERT_TRUE(extension);
++  EXPECT_EQ(extension->path(), root);
++  EXPECT_TRUE(Manifest::IsComponentLocation(extension->location()));
++
++  // Reload the bundle in both directions; no uninstall/storage-deletion path.
++  for (const char* version : {"0.2.0", "0.1.0"}) {
++    component_loader_->Remove(kId);
++    manifest.Set("version", version);
++    ASSERT_TRUE(base::WriteFile(root.AppendASCII("manifest.json"),
++                               *base::WriteJson(manifest)));
++    component_loader_->AddDefaultComponentExtensions(false);
++    component_loader_->LoadAll();
++    extension = ExtensionRegistry::Get(profile())->enabled_extensions().GetByID(kId);
++    ASSERT_TRUE(extension);
++    EXPECT_EQ(extension->version().GetString(), version);
++  }
++}
++
++TEST_F(ComponentLoaderTest, VRWatchRejectsWrongExternalKey) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  base::ScopedPathOverride executable_dir(base::DIR_EXE, directory.GetPath());
++  const auto root = directory.GetPath().AppendASCII("vrwatch-extension");
++  ASSERT_TRUE(base::CreateDirectory(root));
++  ASSERT_TRUE(base::WriteFile(root.AppendASCII("manifest.json"),
++                             manifest_contents_));
++  component_loader_->AddDefaultComponentExtensions(false);
++  EXPECT_FALSE(component_loader_->Exists("bkjijegjmneghekcknijmioimbahmfap"));
++}
++#endif
++
+ TEST_F(ComponentLoaderTest, ParseManifest) {
+   std::optional<base::DictValue> manifest;
+ 

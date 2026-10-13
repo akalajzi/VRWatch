@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Iris firmware on the validated SteamOS build fails on the second VP9 session.
+# Keep Chromium's supported software fallback until the driver is fixed.
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec "$here/chrome" --disable_accelerated_vp9_decode --disable_accelerated_vp9_profile2_decode "$@"

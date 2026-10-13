@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import * as esbuild from 'esbuild';
+const outdir = 'artifacts/native-hud-probe';
+await fs.mkdir(outdir, { recursive: true });
+await esbuild.build({ entryPoints: ['tests/fixtures/native-hud.js'], outfile: `${outdir}/hud.js`, bundle: true, format: 'esm' });
+const html = (await fs.readFile('extension/pages/hud.html', 'utf8')).replace('<script src="hud.js">', '<script type="module" src="hud.js">');
+await fs.writeFile(`${outdir}/index.html`, html);
+await fs.copyFile('extension/pages/native-hud.css', `${outdir}/native-hud.css`);
+await fs.copyFile('extension/pages/hud.css', `${outdir}/hud.css`);
+await fs.cp('extension/icons', `${outdir}/icons`, { recursive: true });
+console.log(`External HUD fixture: ${outdir}. Native host, focus and device acceptance are separate.`);

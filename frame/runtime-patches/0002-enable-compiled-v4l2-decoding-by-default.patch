@@ -1,0 +1,11 @@
+diff --git a/media/base/media_switches.cc b/media/base/media_switches.cc
+--- a/media/base/media_switches.cc
++++ b/media/base/media_switches.cc
+@@ -1486,6 +1486,6 @@ BASE_FEATURE(kAcceleratedVideoDecodeLinux,
+              "AcceleratedVideoDecoder",
+-#if BUILDFLAG(USE_VAAPI)
++#if BUILDFLAG(USE_VAAPI) || BUILDFLAG(USE_V4L2_CODEC)
+              base::FEATURE_ENABLED_BY_DEFAULT);
+ #else
+              base::FEATURE_DISABLED_BY_DEFAULT);
+ #endif

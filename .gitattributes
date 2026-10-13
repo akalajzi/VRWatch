@@ -1,0 +1,5 @@
+# Unified patches retain single-space context markers for blank lines.
+frame/runtime-patches/*.patch -whitespace
+
+# Unified-diff context uses a single space for unchanged blank lines.
+frame/next-runtime-patches/*.patch whitespace=-blank-at-eol

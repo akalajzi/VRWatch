@@ -1,0 +1,57 @@
+diff --git a/chrome/browser/ui/views/user_education/browser_user_education_service.cc b/chrome/browser/ui/views/user_education/browser_user_education_service.cc
+index c78e57377a..45c431e96e 100644
+--- a/chrome/browser/ui/views/user_education/browser_user_education_service.cc
++++ b/chrome/browser/ui/views/user_education/browser_user_education_service.cc
+@@ -113,7 +113,6 @@
+ #include "components/feature_engagement/public/event_constants.h"
+ #include "components/feature_engagement/public/feature_constants.h"
+ #include "components/lens/lens_features.h"
+-#include "components/pdf/browser/pdf_document_helper.h"
+ #include "components/safe_browsing/core/common/safebrowsing_referral_methods.h"
+ #include "components/saved_tab_groups/public/features.h"
+ #include "components/send_tab_to_self/features.h"
+@@ -174,8 +173,9 @@
+ #include "chrome/browser/ui/webui/extensions_zero_state_promo/zero_state_promo_ui.h"
+ #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+ 
+-#if BUILDFLAG(ENABLE_PDF_INK2)
++#if BUILDFLAG(ENABLE_PDF)
+ #include "chrome/browser/pdf/pdf_help_bubble_handler_factory.h"
++#include "components/pdf/browser/pdf_document_helper.h"
+ #endif
+ 
+ namespace {
+@@ -1108,6 +1108,7 @@ void MaybeRegisterChromeFeaturePromos(
+           .SetBubbleIcon(kLightbulbOutlineIcon)
+           .SetBubbleTitleText(IDS_PASSWORD_MANAGER_IPH_CREATE_SHORTCUT_TITLE)));
+ 
++#if BUILDFLAG(ENABLE_PDF)
+   // kIPHPdfGlicSummarizeFeature:
+   registry.RegisterFeature(std::move(
+       FeaturePromoSpecification::CreateForToastPromo(
+@@ -1184,6 +1185,8 @@ void MaybeRegisterChromeFeaturePromos(
+                 return nullptr;
+               }))));
+ 
++#endif  // BUILDFLAG(ENABLE_PDF)
++
+   // kIPHLensOverlayFeature:
+   registry.RegisterFeature(std::move(
+       FeaturePromoSpecification::CreateForTutorialPromo(
+@@ -1881,6 +1884,7 @@ void MaybeRegisterChromeFeaturePromos(
+           .SetMetadata(108, "agale@chromium.org",
+                        "Triggered when device is low on memory.")));
+ 
++#if BUILDFLAG(ENABLE_PDF)
+   // kIPHPdfTranslateBubbleFeature
+   registry.RegisterFeature(std::move(
+       FeaturePromoSpecification::CreateForToastPromo(
+@@ -1895,6 +1899,8 @@ void MaybeRegisterChromeFeaturePromos(
+                        "Shows an IPH when a user translates a PDF for the "
+                        "first time.")));
+ 
++#endif  // BUILDFLAG(ENABLE_PDF)
++
+   // kIPHDiscardRingFeature:
+   registry.RegisterFeature(std::move(
+       FeaturePromoSpecification::CreateForCustomAction(

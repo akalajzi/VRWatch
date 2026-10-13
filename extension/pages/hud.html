@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VRWatch controls</title><link rel="stylesheet" href="hud.css"><link rel="stylesheet" href="native-hud.css"></head>
+<body><main>
+  <section class="dock" aria-label="VRWatch controls">
+    <button class="brand-toggle" id="hide" aria-label="Collapse VRWatch controls" title="Collapse VRWatch controls"><img src="icons/icon128.png" alt=""></button>
+    <nav class="actions" aria-label="Browser navigation">
+      <button class="action" data-action="back" data-icon="back" aria-label="Back" title="Back"></button>
+      <button class="action" data-action="forward" data-icon="forward" aria-label="Forward" title="Forward"></button>
+      <button class="action" id="reload" data-action="reload" data-icon="reload" aria-label="Reload" title="Reload"></button>
+      <button class="action" data-action="home" data-icon="home" aria-label="Home" title="Home"></button>
+    </nav>
+    <form class="address-field" id="address-form"><label class="sr-only" for="address">Website or search</label><span data-icon="globe"></span><input id="address" inputmode="url" autocomplete="url" spellcheck="false" placeholder="Enter a website or video URL"><button aria-label="Open URL" title="Open URL" data-icon="forward"></button></form>
+    <div class="actions"><button class="action" id="bookmark" data-action="bookmark" data-icon="bookmark" aria-label="Bookmark" title="Bookmark" aria-pressed="false"></button><button class="action tabs-action" id="tabs" data-icon="tabs" aria-label="Tabs" title="Tabs" aria-expanded="false"></button></div>
+  </section>
+  <section id="picker" hidden aria-label="Choose a tab">
+    <header class="heading"><div><h1>Tabs</h1><p class="summary" id="summary" role="status"></p></div><div class="tools"><button class="new-tab" id="new" data-action="create"><span data-icon="plus"></span><span>New tab</span></button><button class="icon-button" id="return" aria-label="Return to navigation" title="Return to navigation" data-icon="close"></button></div></header>
+    <div id="cards" class="grid" role="list" aria-label="Open tabs"></div>
+  </section>
+  <p id="status" role="alert"></p>
+</main><script src="hud.js"></script></body></html>

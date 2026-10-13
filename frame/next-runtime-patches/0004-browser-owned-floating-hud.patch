@@ -1,0 +1,590 @@
+diff --git a/chrome/browser/ui/views/extensions/BUILD.gn b/chrome/browser/ui/views/extensions/BUILD.gn
+index b35075073d..392ede4b52 100644
+--- a/chrome/browser/ui/views/extensions/BUILD.gn
++++ b/chrome/browser/ui/views/extensions/BUILD.gn
+@@ -938,3 +938,18 @@ source_set("extensions_toolbar_desktop") {
+     "//ui/base/dragdrop/mojom",
+   ]
+ }
++
++source_set("vrwatch_hud") {
++  sources = [ "vrwatch_hud_controller.cc", "vrwatch_hud_controller.h" ]
++  deps = [
++    ":extension_view_views", ":extension_view_views_impl", ":security_dialog_tracker",
++    "//base", "//chrome/browser/extensions",
++    "//chrome/browser/extensions/api/vrwatch_private:runtime",
++    "//chrome/browser/ui/browser_window",
++    "//chrome/browser/ui/tabs:tab_strip",
++    "//chrome/browser/ui/views/frame:browser_view_header",
++    "//components/permissions", "//components/web_modal",
++    "//components/security_interstitials/content:security_interstitial_page",
++    "//content/public/browser", "//extensions/browser", "//ui/views",
++  ]
++}
+diff --git a/chrome/browser/ui/views/extensions/extension_view_views.cc b/chrome/browser/ui/views/extensions/extension_view_views.cc
+index 3c515b480a..f9beedefd6 100644
+--- a/chrome/browser/ui/views/extensions/extension_view_views.cc
++++ b/chrome/browser/ui/views/extensions/extension_view_views.cc
+@@ -130,7 +130,7 @@ void ExtensionViewViews::OnLoaded() {
+ 
+   // ExtensionPopup delegates showing the view to OnLoaded(). ExtensionDialog
+   // handles visibility directly.
+-  if (GetVisible()) {
++  if (!auto_show_on_load_ || GetVisible()) {
+     return;
+   }
+ 
+diff --git a/chrome/browser/ui/views/extensions/extension_view_views.h b/chrome/browser/ui/views/extensions/extension_view_views.h
+index 61ec87b30f..90752e50ff 100644
+--- a/chrome/browser/ui/views/extensions/extension_view_views.h
++++ b/chrome/browser/ui/views/extensions/extension_view_views.h
+@@ -51,6 +51,8 @@ class ExtensionViewViews : public views::WebView,
+   ~ExtensionViewViews() override;
+ 
+   void Init();
++  // Floating hosts can own visibility across asynchronous renderer loading.
++  void SetAutoShowOnLoad(bool enabled) { auto_show_on_load_ = enabled; }
+ 
+   // views::WebView:
+   void VisibilityChanged(View* starting_from, bool is_visible) override;
+@@ -85,6 +87,7 @@ class ExtensionViewViews : public views::WebView,
+   // What we should set the preferred width to once the ExtensionViewViews has
+   // loaded.
+   gfx::Size pending_preferred_size_;
++  bool auto_show_on_load_ = true;
+ 
+   std::optional<gfx::Size> minimum_size_;
+ 
+diff --git a/chrome/browser/ui/views/extensions/vrwatch_hud_controller.cc b/chrome/browser/ui/views/extensions/vrwatch_hud_controller.cc
+new file mode 100644
+index 0000000000..6a4b9a4ffd
+--- /dev/null
++++ b/chrome/browser/ui/views/extensions/vrwatch_hud_controller.cc
+@@ -0,0 +1,130 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#include "chrome/browser/ui/views/extensions/vrwatch_hud_controller.h"
++#include <algorithm>
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "base/functional/bind.h"
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h"
++#include "chrome/browser/extensions/extension_view_host.h"
++#include "chrome/browser/extensions/extension_view_host_factory.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/views/extensions/extension_view_views.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "components/permissions/permission_request_manager.h"
++#include "components/security_interstitials/content/security_interstitial_tab_helper.h"
++#include "components/web_modal/web_contents_modal_dialog_manager.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/web_contents.h"
++#include "extensions/browser/extension_registry.h"
++#include "ui/views/view_class_properties.h"
++#include "ui/views/widget/widget.h"
++namespace {
++constexpr char kHudURL[] = "chrome-extension://bkjijegjmneghekcknijmioimbahmfap/hud.html";
++}
++VrwatchHudController::VrwatchHudController(BrowserView* browser_view,
++                                         extensions::VrwatchRuntime* runtime)
++    : browser_view_(browser_view), runtime_(runtime) {
++  runtime_->SetHudHandler(base::BindRepeating(&VrwatchHudController::Show,
++                                             base::Unretained(this)));
++  extensions::SecurityDialogTracker::GetInstance()->AddObserver(this);
++}
++VrwatchHudController::~VrwatchHudController() {
++  runtime_->SetHudHandler({});
++  runtime_->HudChanged(nullptr, "closed");
++  extensions::SecurityDialogTracker::GetInstance()->RemoveObserver(this);
++  Observe(nullptr);
++  if (view_) browser_view_->RemoveChildViewT(view_.ExtractAsDangling());
++}
++gfx::Rect VrwatchHudController::Bounds(const gfx::Rect& content, bool picker) {
++  gfx::Rect available = content;
++  available.Inset(16);
++  const int width = std::max(0, std::min(960, available.width()));
++  const int height = std::max(0, std::min(picker ? 640 : 184, available.height()));
++  return gfx::Rect(available.CenterPoint().x() - width / 2,
++                   available.bottom() - height, width, height);
++}
++bool VrwatchHudController::visible() const { return mode_ != "closed"; }
++bool VrwatchHudController::Blocked() const {
++  if (!browser_view_->GetWidget()->IsActive()) return true;
++  if (extensions::SecurityDialogTracker::GetInstance()->BrowserHasVisibleSecurityDialogs(runtime_->browser())) return true;
++  for (const auto& widget : views::Widget::GetAllOwnedWidgets(browser_view_->GetWidget()->GetNativeView())) {
++    if (widget->IsVisible() && widget->IsModal()) return true;
++  }
++  auto* contents = runtime_->browser()->GetTabStripModel()->GetActiveWebContents();
++  if (!contents) return true;
++  auto* dialogs = web_modal::WebContentsModalDialogManager::FromWebContents(contents);
++  auto* permissions = permissions::PermissionRequestManager::FromWebContents(contents);
++  auto* interstitial = security_interstitials::SecurityInterstitialTabHelper::FromWebContents(contents);
++  return (interstitial && interstitial->IsDisplayingInterstitial()) ||
++         (dialogs && dialogs->IsDialogActive()) ||
++         (permissions && permissions->IsRequestInProgress());
++}
++bool VrwatchHudController::Show(const std::string& mode) {
++  if (mode == "closed") { Hide(true); return true; }
++  if (Blocked()) { Hide(false); return false; }
++  if (!host_ || host_->web_contents()->IsCrashed() ||
++      (host_->has_loaded_once() && host_->web_contents()->GetLastCommittedURL() != GURL(kHudURL))) {
++    if (view_) browser_view_->RemoveChildViewT(view_.ExtractAsDangling());
++    host_.reset();
++    const auto* extension = extensions::ExtensionRegistry::Get(runtime_->browser()->GetProfile())
++                                ->enabled_extensions().GetByID(extensions::kVrwatchId);
++    if (!extension) return false;
++    // The side-panel *host type* supplies BrowserWindowInterface and normal
++    // modal delegation without popup auto-sizing. It is not a SidePanel view.
++    host_ = extensions::ExtensionViewHostFactory::CreateSidePanelHost(
++        *extension, GURL(kHudURL), runtime_->browser(), nullptr);
++    view_ = browser_view_->AddChildView(std::make_unique<ExtensionViewViews>(
++        runtime_->browser()->GetProfile(), host_.get()));
++    view_->SetAutoShowOnLoad(false);
++    view_->SetProperty(views::kViewIgnoredByLayoutKey, true);
++    view_->SetVisible(false);
++    view_->Init();
++    host_->CreateRendererSoon();
++  }
++  if (!visible()) {
++    auto* contents = runtime_->browser()->GetTabStripModel()->GetActiveWebContents();
++    Observe(contents);
++    contents->StoreFocus();
++    if (auto* manager = web_modal::WebContentsModalDialogManager::FromWebContents(contents))
++      modal_observation_.Observe(manager);
++    if (auto* manager = permissions::PermissionRequestManager::FromWebContents(contents))
++      permission_observation_.Observe(manager);
++  }
++  mode_ = mode;
++  Layout();
++  view_->SetVisible(true);
++  view_->RequestFocus();
++  runtime_->HudChanged(host_->web_contents(), mode_);
++  return true;
++}
++void VrwatchHudController::Hide(bool restore_focus) {
++  if (!visible()) return;
++  mode_ = "closed";
++  permission_observation_.Reset();
++  modal_observation_.Reset();
++  view_->SetVisible(false);
++  if (restore_focus && !Blocked() && web_contents() ==
++      runtime_->browser()->GetTabStripModel()->GetActiveWebContents()) {
++    web_contents()->RestoreFocus();
++  }
++  Observe(nullptr);
++  runtime_->HudChanged(host_->web_contents(), mode_);
++}
++void VrwatchHudController::Layout() {
++  if (!view_ || !visible()) return;
++  if (Blocked()) { Hide(false); return; }
++  auto* contents = browser_view_->GetActiveContentsWebView();
++  gfx::Rect bounds = contents->GetLocalBounds();
++  bounds = views::View::ConvertRectToTarget(contents, browser_view_, bounds);
++  view_->SetBoundsRect(Bounds(bounds, mode_ == "tabs"));
++}
++void VrwatchHudController::OnSecurityDialogAdded(views::Widget*) { Hide(false); }
++void VrwatchHudController::OnPromptAdded() { Hide(false); }
++void VrwatchHudController::OnWillShow() { Hide(false); }
++void VrwatchHudController::OnPermissionRequestManagerDestructed() { permission_observation_.Reset(); Hide(false); }
++void VrwatchHudController::DidStartNavigation(content::NavigationHandle* handle) {
++  if (handle->IsInPrimaryMainFrame() && !handle->IsSameDocument()) Hide(false);
++}
++void VrwatchHudController::PrimaryMainFrameRenderProcessGone(base::TerminationStatus) { Hide(false); }
++void VrwatchHudController::WebContentsDestroyed() { Hide(false); }
+diff --git a/chrome/browser/ui/views/extensions/vrwatch_hud_controller.h b/chrome/browser/ui/views/extensions/vrwatch_hud_controller.h
+new file mode 100644
+index 0000000000..39f53b8078
+--- /dev/null
++++ b/chrome/browser/ui/views/extensions/vrwatch_hud_controller.h
+@@ -0,0 +1,50 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#ifndef CHROME_BROWSER_UI_VIEWS_EXTENSIONS_VRWATCH_HUD_CONTROLLER_H_
++#define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_VRWATCH_HUD_CONTROLLER_H_
++#include <memory>
++#include <string>
++#include "base/memory/raw_ptr.h"
++#include "base/scoped_observation.h"
++#include "components/permissions/permission_request_manager.h"
++#include "components/web_modal/web_contents_modal_dialog_manager.h"
++#include "chrome/browser/ui/views/extensions/security_dialog_tracker.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "ui/gfx/geometry/rect.h"
++class BrowserView;
++class ExtensionViewViews;
++namespace extensions { class ExtensionViewHost; class VrwatchRuntime; }
++// A child view, never a side panel or top-level popup. The site's layout is
++// untouched. Native security widgets remain above it in the widget hierarchy.
++class VrwatchHudController : public content::WebContentsObserver,
++                             public extensions::SecurityDialogTracker::Observer,
++                             public permissions::PermissionRequestManager::Observer,
++                             public web_modal::WebContentsModalDialogManager::Observer {
++ public:
++  VrwatchHudController(BrowserView* browser_view, extensions::VrwatchRuntime* runtime);
++  ~VrwatchHudController() override;
++  bool Show(const std::string& view);
++  void Hide(bool restore_focus);
++  void Layout();
++  bool visible() const;
++  static gfx::Rect Bounds(const gfx::Rect& content, bool picker);
++  void OnSecurityDialogAdded(views::Widget*) override;
++  void OnPromptAdded() override;
++  void OnWillShow() override;
++  void OnPermissionRequestManagerDestructed() override;
++ private:
++  void DidStartNavigation(content::NavigationHandle*) override;
++  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override;
++  void WebContentsDestroyed() override;
++  bool Blocked() const;
++  raw_ptr<BrowserView> browser_view_;
++  raw_ptr<extensions::VrwatchRuntime> runtime_;
++  std::unique_ptr<extensions::ExtensionViewHost> host_;
++  raw_ptr<ExtensionViewViews> view_ = nullptr;
++  std::string mode_ = "closed";
++  base::ScopedObservation<web_modal::WebContentsModalDialogManager,
++      web_modal::WebContentsModalDialogManager::Observer> modal_observation_{this};
++  base::ScopedObservation<permissions::PermissionRequestManager,
++      permissions::PermissionRequestManager::Observer> permission_observation_{this};
++};
++#endif
+diff --git a/chrome/browser/ui/views/frame/BUILD.gn b/chrome/browser/ui/views/frame/BUILD.gn
+index 95c5a9224d..07e5cfbba2 100644
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -768,6 +768,7 @@ source_set("browser_view") {
+     "//chrome/browser:browser_public_dependencies",
+   ]
+   deps = [
++    "//chrome/browser/ui/views/extensions:vrwatch_hud",
+     ":app_menu_button",
+     ":browser_frame_view",
+     ":browser_native_widget",
+@@ -2321,6 +2322,7 @@ source_set("browser_tests") {
+   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+ 
+   sources = [
++    "vrwatch_hud_browsertest.cc",
+     "browser_frame_view_browsertest.cc",
+     "browser_root_view_browsertest.cc",
+     "browser_view_browsertest.cc",
+@@ -2335,6 +2337,8 @@ source_set("browser_tests") {
+   ]
+ 
+   deps = [
++    "//chrome/browser/ui/views/extensions:vrwatch_hud",
++    "//chrome/browser/extensions:test_support",
+     ":browser_frame_view",
+     ":browser_view_header",
+     ":browser_view_layout",
+diff --git a/chrome/browser/ui/views/frame/browser_frame_view_layout_linux.cc b/chrome/browser/ui/views/frame/browser_frame_view_layout_linux.cc
+index 62208395da..f182139c96 100644
+--- a/chrome/browser/ui/views/frame/browser_frame_view_layout_linux.cc
++++ b/chrome/browser/ui/views/frame/browser_frame_view_layout_linux.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/i18n/rtl.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view_linux.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_layout.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/views/window/frame_view_utils_linux.h"
+@@ -46,6 +47,7 @@ int BrowserFrameViewLayoutLinux::CaptionButtonY(views::FrameButton button_id,
+ }
+ 
+ gfx::Insets BrowserFrameViewLayoutLinux::RestoredFrameBorderInsets() const {
++  if (view_->GetBrowserView()->UsesVrwatchHud()) return gfx::Insets();
+   // Unframed mode only has a minimal frame so it is resizable from the borders.
+   if (delegate_->GetUnframedModeEnabled()) {
+     return gfx::Insets(
+diff --git a/chrome/browser/ui/views/frame/browser_native_widget_aura_linux.cc b/chrome/browser/ui/views/frame/browser_native_widget_aura_linux.cc
+index f8737ba6c7..54f2d762f6 100644
+--- a/chrome/browser/ui/views/frame/browser_native_widget_aura_linux.cc
++++ b/chrome/browser/ui/views/frame/browser_native_widget_aura_linux.cc
+@@ -82,6 +82,8 @@ bool BrowserNativeWidgetAuraLinux::UseCustomFrame() const {
+     return false;
+   }
+ 
++  if (browser_view()->UsesVrwatchHud()) return true;
++
+   // If the platform does not support server side decorations, ignore the user
+   // preference and return true.
+   if (!ui::OzonePlatform::GetInstance()
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index 5c1c744350..f90f254f90 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/extensions/vrwatch_hud_controller.h"
+ 
+ #include <stdint.h>
+ 
+@@ -1108,6 +1109,7 @@ BrowserView::BrowserView(BrowserWindowInterface* browser)
+ }
+ 
+ BrowserView::~BrowserView() {
++  vrwatch_hud_.reset();
+   vrwatch_runtime_.reset();
+   // Remove the layout manager to avoid dangling. This needs to be earlier than
+   // other cleanups that destroy views referenced in the layout manager.
+@@ -2816,7 +2818,15 @@ bool BrowserView::WidgetOwnedByAnchorContainsPoint(
+   });
+ }
+ 
++bool BrowserView::UsesVrwatchHud() const {
++  auto* owner = extensions::VrwatchRuntime::ForProfile(browser()->GetProfile());
++  return extensions::VrwatchRuntime::Enabled(browser()) &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch("vrwatch-hud") &&
++      (!owner || owner->browser() == browser());
++}
++
+ bool BrowserView::IsUnframedModeEnabled() const {
++  if (UsesVrwatchHud()) return true;
+   return unframed_mode_enabled_ && window_management_permission_granted_;
+ }
+ 
+@@ -2834,11 +2844,13 @@ BrowserView* BrowserView::AsBrowserView() {
+ }
+ 
+ bool BrowserView::AppUsesUnframedMode() const {
++  if (UsesVrwatchHud()) return true;
+   auto* const app_controller = web_app::AppBrowserController::From(browser());
+   return app_controller && app_controller->AppUsesUnframedMode();
+ }
+ 
+ bool BrowserView::AreDraggableRegionsEnabled() const {
++  if (UsesVrwatchHud()) return false;
+   return IsWindowControlsOverlayEnabled() || IsUnframedModeEnabled();
+ }
+ 
+@@ -2978,6 +2990,7 @@ void BrowserView::OnWidgetWindowModalVisibilityChanged(views::Widget* widget,
+ #if !BUILDFLAG(IS_MAC)
+   // MacOS does not need views window scrim. We use sheets to show window modals
+   // (-[NSWindow beginSheet:]), which natively draw a scrim.
++  if (visible && vrwatch_hud_) vrwatch_hud_->Hide(false);
+   window_scrim_view_->SetVisible(visible);
+ #endif
+ }
+@@ -3220,6 +3233,18 @@ void BrowserView::ShowAppMenu() {
+ 
+ content::KeyboardEventProcessingResult BrowserView::PreHandleKeyboardEvent(
+     const NativeWebKeyboardEvent& event) {
++  if (vrwatch_hud_ && event.GetType() == blink::WebInputEvent::Type::kRawKeyDown) {
++    const bool control = event.GetModifiers() & blink::WebInputEvent::kControlKey;
++    if (event.windows_key_code == ui::VKEY_ESCAPE && vrwatch_hud_->visible()) {
++      vrwatch_hud_->Hide(true);
++      return content::KeyboardEventProcessingResult::HANDLED;
++    }
++    if (control && (event.windows_key_code == ui::VKEY_L || event.windows_key_code == ui::VKEY_T)) {
++      vrwatch_runtime_->ShowHud(event.windows_key_code == ui::VKEY_L ? "navigation" : "tabs");
++      return content::KeyboardEventProcessingResult::HANDLED;
++    }
++  }
++
+   if ((event.GetType() != blink::WebInputEvent::Type::kRawKeyDown) &&
+       (event.GetType() != blink::WebInputEvent::Type::kKeyUp)) {
+     return content::KeyboardEventProcessingResult::NOT_HANDLED;
+@@ -4179,6 +4204,7 @@ void BrowserView::OnWidgetDestroying(views::Widget* widget) {
+ 
+ void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
+                                             bool active) {
++  if (!active && vrwatch_hud_) vrwatch_hud_->Hide(false);
+   if (browser_->GetWindow()) {
+     if (active) {
+       if (restore_focus_on_activation_.has_value() &&
+@@ -4958,6 +4984,7 @@ void BrowserView::Layout(PassKey) {
+ 
+   layout_deferred_while_invisible_ = false;
+   last_laid_out_size_ = size();
++  if (vrwatch_hud_) vrwatch_hud_->Layout();
+ }
+ 
+ void BrowserView::OnGestureEvent(ui::GestureEvent* event) {
+@@ -4979,6 +5006,7 @@ void BrowserView::ViewHierarchyChanged(
+ }
+ 
+ void BrowserView::AddedToWidget() {
++  WindowFeatureController::From(browser())->SetVrwatchHudEnabled(UsesVrwatchHud());
+   // BrowserView may be added to a widget more than once if the user changes
+   // themes after starting the browser. Do not re-initialize BrowserView in
+   // this case.
+@@ -5176,6 +5204,9 @@ void BrowserView::AddedToWidget() {
+       !extensions::VrwatchRuntime::ForProfile(browser()->GetProfile())) {
+     vrwatch_runtime_ = std::make_unique<extensions::VrwatchRuntime>(browser());
+   }
++  if (vrwatch_runtime_ && UsesVrwatchHud()) {
++    vrwatch_hud_ = std::make_unique<VrwatchHudController>(this, vrwatch_runtime_.get());
++  }
+   initialized_ = true;
+ }
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index e42cdf9420..574042a2b1 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -74,6 +74,7 @@
+ // NOTE: For more information about the objects and files in this directory,
+ // view: http://dev.chromium.org/developers/design-documents/browser-window
+ 
++class VrwatchHudController;
+ class AccessibilityFocusHighlight;
+ class BookmarkBarController;
+ class BookmarkBarView;
+@@ -571,6 +572,7 @@ class BrowserView : public BrowserWindow,
+   bool IsToolbarShowing() const override;
+   bool IsLocationBarVisible() const override;
+   bool IsUnframedModeEnabled() const override;
++  bool UsesVrwatchHud() const;
+   void ShowChromeLabs() override;
+   BrowserView* AsBrowserView() override;
+   void ShowUpdateChromeDialog() override;
+@@ -1259,6 +1261,7 @@ class BrowserView : public BrowserWindow,
+ 
+   // True if we have already been initialized.
+   std::unique_ptr<extensions::VrwatchRuntime> vrwatch_runtime_;
++  std::unique_ptr<VrwatchHudController> vrwatch_hud_;
+   bool initialized_ = false;
+ 
+   // True if layout should be suppressed (used during teardown).
+diff --git a/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc b/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc
+new file mode 100644
+index 0000000000..71befe3372
+--- /dev/null
++++ b/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc
+@@ -0,0 +1,93 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#include "chrome/browser/ui/views/extensions/vrwatch_hud_controller.h"
++#include "base/command_line.h"
++#include "base/run_loop.h"
++#include "chrome/browser/extensions/extension_browsertest.h"
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/extensions/extension_view_views.h"
++#include "ui/views/view_utils.h"
++#include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test.h"
++#include "content/public/test/browser_test_utils.h"
++#include "extensions/test/test_extension_dir.h"
++#include "ui/views/widget/widget.h"
++
++class VrwatchHudBrowserTest : public extensions::ExtensionBrowserTest {
++ public:
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    ExtensionBrowserTest::SetUpCommandLine(command_line);
++    command_line->AppendSwitch("vrwatch-native");
++    command_line->AppendSwitch("vrwatch-hud");
++  }
++  void SetUpOnMainThread() override {
++    ExtensionBrowserTest::SetUpOnMainThread();
++    directory_.WriteManifest(R"({"manifest_version":3,"name":"VRWatch test","version":"0.1.2","key":"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApkAk+wANInwx9fRrtdkUZJmwfZiYoS/BZKA3reqNn3NodGlnCjKL7KjuZvT9CCLAqFAEcpd/apHdcaYyBBGGvW3zTLu22BV0TgTJdvKixeVr0UhUUMr8Ate41/l6EdS9jcDDQyRvU785I+Ak46e+ZWMOmCvzhZ/wfFJw0Q8wRcBuYjoDCwWTi+ariA217NdxKeOJWgto++s3a2XEhjHi64m4fJnNziDfewb4vzUKnouQwypWsCfbPMH+MWZwyolbrCHvXCneokTsTIg8Wkrl0NkfyggU2Hw6RG7MPw9VWyMtQm94eXC/OUSrgMLWtmDSu+W9hTxvW9NeuiKMPahkPQIDAQAB"})");
++    directory_.WriteFile(FILE_PATH_LITERAL("hud.html"), "<!doctype html><input autofocus><button>Hide</button>");
++    ASSERT_TRUE(LoadExtensionAsComponent(directory_.UnpackedPath()));
++    browser()->GetWindow()->Activate();
++    base::RunLoop().RunUntilIdle();
++  }
++  extensions::VrwatchRuntime* runtime() { return extensions::VrwatchRuntime::ForProfile(profile()); }
++ private:
++  extensions::TestExtensionDir directory_;
++};
++IN_PROC_BROWSER_TEST_F(VrwatchHudBrowserTest, NoReservedChromeOrResize) {
++  auto* view = BrowserView::GetBrowserViewForBrowser(browser());
++  auto* contents = browser()->GetTabStripModel()->GetActiveWebContents();
++  const auto before = contents->GetContainerBounds();
++  ASSERT_TRUE(view->IsUnframedModeEnabled());
++  auto* features = WindowFeatureController::From(browser());
++  EXPECT_FALSE(features->SupportsWindowFeature(WindowFeatureController::WindowFeature::kFeatureTabStrip));
++  EXPECT_FALSE(features->SupportsWindowFeature(WindowFeatureController::WindowFeature::kFeatureToolbar));
++  for (const char* mode : {"navigation", "tabs", "closed"}) {
++    ASSERT_TRUE(runtime()->ShowHud(mode));
++    base::RunLoop().RunUntilIdle();
++    EXPECT_EQ(before, contents->GetContainerBounds());
++  }
++  EXPECT_EQ(view->GetContentsSize(), view->size());
++  for (auto size : {gfx::Size(1280,800), gfx::Size(640,480), gfx::Size(300,200)}) {
++    gfx::Rect page(size);
++    EXPECT_TRUE(page.Contains(VrwatchHudController::Bounds(page, true)));
++    EXPECT_TRUE(page.Contains(VrwatchHudController::Bounds(page, false)));
++  }
++}
++IN_PROC_BROWSER_TEST_F(VrwatchHudBrowserTest, NavigationAndSecurityDismissWithoutStealingFocus) {
++  ASSERT_TRUE(runtime()->ShowHud("tabs"));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  EXPECT_EQ(*runtime()->State().FindString("hudView"), "closed");
++  ASSERT_TRUE(runtime()->ShowHud("navigation"));
++  extensions::SecurityDialogTracker::GetInstance()->AddSecurityDialog(
++      BrowserView::GetBrowserViewForBrowser(browser())->GetWidget());
++  EXPECT_EQ(*runtime()->State().FindString("hudView"), "closed");
++  EXPECT_FALSE(runtime()->ShowHud("tabs"));
++  extensions::SecurityDialogTracker::GetInstance()->RemoveSecurityDialog(
++      BrowserView::GetBrowserViewForBrowser(browser())->GetWidget());
++}
++IN_PROC_BROWSER_TEST_F(VrwatchHudBrowserTest, TabPageCannotImpersonateHud) {
++  const auto state = runtime()->State();
++  EXPECT_FALSE(runtime()->IsHudDocument(*state.FindString("documentId")));
++  EXPECT_FALSE(runtime()->IsHudDocument("forged"));
++  ASSERT_TRUE(runtime()->ShowHud("tabs"));
++  EXPECT_FALSE(runtime()->IsHudDocument(*state.FindString("documentId")));
++}
++
++IN_PROC_BROWSER_TEST_F(VrwatchHudBrowserTest, LateRendererLoadCannotReopenHud) {
++  ASSERT_TRUE(runtime()->ShowHud("tabs"));
++  ASSERT_TRUE(runtime()->ShowHud("closed"));
++  auto* view = BrowserView::GetBrowserViewForBrowser(browser());
++  bool found = false;
++  for (views::View* child : view->children()) {
++    if (auto* hud = views::AsViewClass<ExtensionViewViews>(child)) {
++      found = true;
++      ASSERT_TRUE(content::WaitForLoadStop(hud->web_contents()));
++      EXPECT_FALSE(hud->GetVisible());
++    }
++  }
++  EXPECT_TRUE(found);
++}
+diff --git a/chrome/browser/ui/window_feature_controller/window_feature_controller.cc b/chrome/browser/ui/window_feature_controller/window_feature_controller.cc
+index ec7bd3ea6c..04ef4b3e64 100644
+--- a/chrome/browser/ui/window_feature_controller/window_feature_controller.cc
++++ b/chrome/browser/ui/window_feature_controller/window_feature_controller.cc
+@@ -77,6 +77,16 @@ bool WindowFeatureController::UsesImmersiveFullscreenTabbedMode() const {
+ bool WindowFeatureController::NormalBrowserSupportsWindowFeature(
+     WindowFeature feature,
+     bool check_can_support) const {
++  if (!check_can_support && vrwatch_hud_enabled_) {
++    switch (feature) {
++      case WindowFeature::kFeatureTabStrip:
++      case WindowFeature::kFeatureToolbar:
++      case WindowFeature::kFeatureLocationBar:
++      case WindowFeature::kFeatureBookmarkBar:
++        return false;
++      default: break;
++    }
++  }
+   switch (feature) {
+     case WindowFeature::kFeatureBookmarkBar:
+       return true;
+diff --git a/chrome/browser/ui/window_feature_controller/window_feature_controller.h b/chrome/browser/ui/window_feature_controller/window_feature_controller.h
+index 7c203d12c1..5cfe16c0fa 100644
+--- a/chrome/browser/ui/window_feature_controller/window_feature_controller.h
++++ b/chrome/browser/ui/window_feature_controller/window_feature_controller.h
+@@ -60,6 +60,7 @@ class WindowFeatureController {
+   bool CanSupportWindowFeature(WindowFeature feature) const;
+ 
+   bool IsTrustedSource() const;
++  void SetVrwatchHudEnabled(bool enabled) { vrwatch_hud_enabled_ = enabled; }
+ 
+ #if BUILDFLAG(IS_MAC)
+   // Returns if the window will use immersive fullscreen mode.
+@@ -92,6 +93,7 @@ class WindowFeatureController {
+ 
+   const BrowserWindowInterface::Type browser_type_;
+   const bool is_trusted_source_;
++  bool vrwatch_hud_enabled_ = false;
+ 
+   ui::ScopedUnownedUserData<WindowFeatureController> scoped_unowned_user_data_;
+ };

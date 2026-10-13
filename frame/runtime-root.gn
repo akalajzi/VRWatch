@@ -1,0 +1,8 @@
+# Build only the browser runtime and its process helpers.
+group("runtime") {
+  deps = [
+    "//chrome",
+    "//components/crash/core/app:chrome_crashpad_handler",
+    "//sandbox/linux:chrome_sandbox",
+  ]
+}

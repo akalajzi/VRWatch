@@ -1,0 +1,48 @@
+{
+  "app_key": "vrwatch.native-input",
+  "controller_type": "frame_controller",
+  "name": "VRWatch native browsing",
+  "description": "Thumbsticks scroll; left Y opens navigation, right B opens tabs.",
+  "bindings": {
+    "/actions/browser": {
+      "sources": [
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/browser/in/left"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "joystick",
+          "inputs": {
+            "position": {
+              "output": "/actions/browser/in/right"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/left/input/y",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/browser/in/navigation"
+            }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/b",
+          "mode": "button",
+          "inputs": {
+            "click": {
+              "output": "/actions/browser/in/tabs"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

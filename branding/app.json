@@ -1,0 +1,11 @@
+{
+  "id": "vrwatch",
+  "name": "VRWatch",
+  "version": "0.1.1",
+  "summary": "Video browser and immersive VR player",
+  "description": "Find web videos and watch them in a cinema screen, VR180, or 360-degree scene with in-headset playback controls.",
+  "developer": "VRWatch contributors",
+  "license": "MPL-2.0",
+  "steamvr_app_key": "vrwatch.app",
+  "icon": "app-icon.png"
+}

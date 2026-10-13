@@ -1,0 +1,48 @@
+diff --git a/chrome/browser/enterprise/BUILD.gn b/chrome/browser/enterprise/BUILD.gn
+index 33c5b7a9a8..a29c48f5ad 100644
+--- a/chrome/browser/enterprise/BUILD.gn
++++ b/chrome/browser/enterprise/BUILD.gn
+@@ -236,7 +236,7 @@ source_set("enterprise") {
+     ]
+   }
+ 
+-  if (enterprise_watermark && toolkit_views) {
++  if (toolkit_views) {
+     public_deps += [
+       "//chrome/browser/enterprise/data_protection:data_protection_view_lib",
+     ]
+diff --git a/chrome/browser/enterprise/data_protection/data_protection_ui_controller.cc b/chrome/browser/enterprise/data_protection/data_protection_ui_controller.cc
+index b5dcf56953..fffec58f28 100644
+--- a/chrome/browser/enterprise/data_protection/data_protection_ui_controller.cc
++++ b/chrome/browser/enterprise/data_protection/data_protection_ui_controller.cc
+@@ -16,8 +16,6 @@
+ #include "chrome/browser/ui/tabs/public/tab_features.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/contents_web_view.h"
+-#include "components/enterprise/watermarking/content/watermark_text_container.h"
+-#include "components/enterprise/watermarking/watermark.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/web_contents.h"
+@@ -63,9 +61,13 @@ void DataProtectionUIController::ContentsViewDataProtectionController::
+     return;
+   }
+ 
++#if BUILDFLAG(ENTERPRISE_WATERMARK) || \
++    BUILDFLAG(ENTERPRISE_SCREENSHOT_PROTECTION)
+   enterprise_data_protection::DataProtectionNavigationController* controller =
+       tab->GetTabFeatures()->data_protection_controller();
++#endif
+ 
++#if BUILDFLAG(ENTERPRISE_WATERMARK)
+   contents_container_view_->ApplyWatermarkSettings(
+       controller->watermark_text(), enterprise_watermark::GetFillColor(prefs_),
+       enterprise_watermark::GetOutlineColor(prefs_),
+@@ -75,6 +77,7 @@ void DataProtectionUIController::ContentsViewDataProtectionController::
+       controller->RegisterWatermarkStringUpdatedCallback(base::BindRepeating(
+           &ContentsViewDataProtectionController::OnWatermarkStringUpdated,
+           base::Unretained(this)));
++#endif  // BUILDFLAG(ENTERPRISE_WATERMARK)
+ #if BUILDFLAG(ENTERPRISE_SCREENSHOT_PROTECTION)
+   owner_->MaybeUpdateScreenshotSettings();
+ 

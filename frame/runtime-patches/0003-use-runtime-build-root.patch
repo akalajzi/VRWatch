@@ -1,0 +1,12 @@
+diff --git a/.gn b/.gn
+index 84c68fbae2..f80202babb 100644
+--- a/.gn
++++ b/.gn
+@@ -475,3 +475,7 @@ expand_directory_allowlist =
+ allow_circular_includes_from_allowlist =
+     allow_circular_includes_from_untriaged + project_bedrock_circular_includes +
+     []
++
++# Keep helper tools' temporary GN queries on the same runtime-only graph.
++root = "//vrwatch_runtime"
++root_patterns = [ "//vrwatch_runtime:runtime" ]

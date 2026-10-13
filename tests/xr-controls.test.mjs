@@ -1,0 +1,96 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { XRControls } from '../extension/src/xr-controls.js';
+
+test('XR controller rays seek, drag volume, pause, and reveal the panel in the rendered scene', () => {
+  const originalDocument = globalThis.document;
+  const originalPath2D = globalThis.Path2D;
+  globalThis.Path2D = class { constructor(path) { this.path = path; } };
+  const context = new Proxy({}, { get: () => () => {} });
+  globalThis.document = { createElement: () => ({ getContext: () => context }) };
+  const controllers = [new THREE.Group(), new THREE.Group()];
+  const camera = new THREE.PerspectiveCamera();
+  const video = { duration: 100, currentTime: 50, seekable: { length: 0 }, volume: 0.5, muted: false, paused: false, pause() { this.paused = true; }, play() { this.paused = false; return Promise.resolve(); } };
+  let recenters = 0, exits = 0;
+  const player = { video, scene: new THREE.Scene(), renderer: { xr: { isPresenting: true, getController: i => controllers[i], getCamera: () => camera, getSession: () => ({ end() { exits++; } }) } }, recenter() { recenters++; } };
+  let controls;
+  try {
+    controls = new XRControls(player);
+    assert.equal(controls.canvas.height, 164);
+    assert.equal(controls.panel.visible, false);
+    assert.equal(video.paused, false, 'VR entry preserves playback');
+    controls.setPanelVisible(true);
+    assert.equal(video.paused, true, 'opening the HUD pauses playback');
+    const source = { gamepad: { axes: [0, 0, 0, 0] } };
+    controllers[0].dispatchEvent({ type: 'connected', data: source });
+    controls.update(500);
+    const pointAt = (x, y) => {
+      const w = controls.canvas.width, h = controls.canvas.height;
+      const { width, height } = controls.panel.geometry.parameters;
+      controllers[0].position.copy(controls.panel.localToWorld(new THREE.Vector3(width * (x / w - 0.5), height * (0.5 - y / h), 0)));
+      controllers[0].position.z = 0;
+      player.scene.updateMatrixWorld(true);
+    };
+    pointAt(715, 38); // 75% along the seek bar
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.ok(Math.abs(video.currentTime - 75) < 0.001);
+    controllers[0].dispatchEvent({ type: 'selectend' });
+    pointAt(510, 112); // center of the volume slider
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.ok(Math.abs(video.volume - 0.5) < 0.001);
+    pointAt(640, 112);
+    controls.update(1000);
+    assert.ok(Math.abs(video.volume - 1) < 0.001);
+    controllers[0].dispatchEvent({ type: 'selectend' });
+    pointAt(140, 112);
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.equal(video.paused, false);
+    assert.equal(controls.panel.visible, false, 'Play dismisses the HUD');
+    assert.equal(controls.buttons[1].icon(), 'pause');
+    controllers[0].dispatchEvent({ type: 'squeezestart' });
+    assert.equal(video.paused, true);
+    assert.equal(controls.buttons[1].icon(), 'play');
+    pointAt(332, 112);
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.equal(video.muted, true);
+    assert.equal(controls.buttons[3].icon(), 'muted');
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.equal(video.muted, false);
+    assert.equal(controls.buttons[3].icon(), 'volume');
+    pointAt(832, 112);
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.equal(controls.modeOpen, true);
+    assert.equal(recenters, 0);
+    pointAt(952, 112);
+    controllers[0].dispatchEvent({ type: 'selectstart' });
+    assert.equal(exits, 1);
+    controllers[0].dispatchEvent({ type: 'squeezestart' });
+    assert.equal(controls.panel.visible, false);
+    controllers[0].dispatchEvent({ type: 'squeezestart' });
+    assert.equal(controls.panel.visible, true);
+    source.gamepad.axes = [0, 0, 1, 0];
+    controls.update(1500);
+    assert.ok(Math.abs(video.currentTime - 85) < 0.001);
+    source.gamepad.axes = [0, 0, 0, 1];
+    controls.update(2000);
+    assert.ok(Math.abs(video.volume - 0.95) < 0.001);
+    source.gamepad.axes = [0, 0, 0, 0];
+    pointAt(400, 38);
+    controls.update(2200);
+    const cursor = controls.controllers[0].cursor;
+    assert.equal(cursor.visible, true);
+    assert.equal(cursor.material.transparent, true);
+    const cursorX = cursor.position.x;
+    const textureVersion = controls.texture.version;
+    pointAt(420, 38);
+    controls.update(2211); // one 90 Hz frame, inside the texture refresh interval
+    assert.ok(cursor.position.x > cursorX);
+    assert.equal(controls.texture.version, textureVersion);
+    assert.ok(controls.controllers[0].line.scale.z < 1);
+    controllers[0].dispatchEvent({ type: 'disconnected' });
+    controls.update(2222);
+    assert.equal(cursor.visible, false);
+    assert.equal(controls.controllers[0].line.visible, false);
+  } finally { controls?.dispose(); globalThis.document = originalDocument; globalThis.Path2D = originalPath2D; }
+});

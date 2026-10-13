@@ -1,0 +1,34 @@
+--- a/chrome/browser/extensions/api/messaging/launch_context_posix.cc
++++ b/chrome/browser/extensions/api/messaging/launch_context_posix.cc
+@@ -8,6 +8,7 @@
+ #include <utility>
+ 
+ #include "base/command_line.h"
++#include "base/base_paths.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_file.h"
+ #include "base/logging.h"
+@@ -41,6 +42,23 @@
+ base::FilePath LaunchContext::FindManifest(const std::string& host_name,
+                                            bool allow_user_level_hosts,
+                                            std::string& error_message) {
++  // Only VRWatch's exact host name uses this bundled path. Do not fall back to
++  // a user/global registration if the bundled helper is missing. The manifest
++  // still enforces the exact allowed extension origin in LaunchContext.
++#if BUILDFLAG(IS_LINUX)
++  if (host_name == "com.vrwatch.bridge") {
++    base::FilePath executable_dir;
++    if (base::PathService::Get(base::DIR_EXE, &executable_dir)) {
++      const auto manifest = executable_dir.AppendASCII("native-messaging")
++                                .AppendASCII("com.vrwatch.bridge.json");
++      if (base::PathExists(manifest)) {
++        return manifest;
++      }
++    }
++    error_message = "VRWatch bundled native messaging host is missing";
++    return base::FilePath();
++  }
++#endif
+   base::FilePath result;
+   if (allow_user_level_hosts) {
+     result = FindManifestInDir(chrome::DIR_USER_NATIVE_MESSAGING, host_name);

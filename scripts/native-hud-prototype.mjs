@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import * as esbuild from 'esbuild';
+const outdir = 'artifacts/native-hud-prototype';
+await fs.mkdir(outdir, { recursive: true });
+await esbuild.build({ entryPoints: { hud: 'extension/src/native-hud.js', fixture: 'tests/fixtures/native-redesign.js', launcher: 'tests/fixtures/native-launcher.js' }, outdir, bundle: true });
+for (const name of ['hud.css', 'native-hud.css']) await fs.copyFile(`extension/pages/${name}`, `${outdir}/${name}`);
+await fs.cp('extension/icons', `${outdir}/icons`, { recursive: true });
+const html = await fs.readFile('extension/pages/hud.html', 'utf8');
+await fs.writeFile(`${outdir}/index.html`, html.replace('<script src="hud.js">', '<script src="fixture.js"></script><script src="hud.js">'));
+await fs.writeFile(`${outdir}/launcher.html`, '<!doctype html><title>Native launcher fixture</title><style>body{margin:0}main{height:1800px;background:#192129;color:white}</style><main id="page">Unmodified page bounds</main><script src="launcher.js"></script>');
+console.log(`Native HUD DOM fixture built at ${outdir}; serve on loopback. No native acceptance claims.`);

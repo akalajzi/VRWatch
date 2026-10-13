@@ -1,0 +1,8 @@
+{
+  "action_sets": [{ "name": "/actions/browser", "usage": "leftright" }],
+  "actions": [
+    { "name": "/actions/browser/in/left", "type": "vector2", "requirement": "optional" },
+    { "name": "/actions/browser/in/right", "type": "vector2", "requirement": "optional" }
+  ],
+  "default_bindings": [{ "controller_type": "frame_controller", "binding_url": "frame-controller.json" }]
+}

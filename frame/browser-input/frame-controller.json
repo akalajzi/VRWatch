@@ -1,0 +1,14 @@
+{
+  "app_key": "vrwatch.browser-input",
+  "controller_type": "frame_controller",
+  "name": "VRWatch browser scrolling",
+  "description": "Scroll with either thumbstick while browsing.",
+  "bindings": {
+    "/actions/browser": {
+      "sources": [
+        { "path": "/user/hand/left/input/thumbstick", "mode": "joystick", "inputs": { "position": { "output": "/actions/browser/in/left" } } },
+        { "path": "/user/hand/right/input/thumbstick", "mode": "joystick", "inputs": { "position": { "output": "/actions/browser/in/right" } } }
+      ]
+    }
+  }
+}

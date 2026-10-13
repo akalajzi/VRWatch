@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "VRWatch",
+  "version": "0.1.1",
+  "description": "Find web videos, enter VR, and control playback without leaving the headset.",
+  "minimum_chrome_version": "157",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "scrollbars.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "Open VRWatch",
+    "default_popup": "popup.html"
+  },
+  "chrome_url_overrides": {
+    "newtab": "home.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/icon128.png",
+        "home.html",
+        "home.js",
+        "home.css",
+        "scrollbars.css"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApkAk+wANInwx9fRrtdkUZJmwfZiYoS/BZKA3reqNn3NodGlnCjKL7KjuZvT9CCLAqFAEcpd/apHdcaYyBBGGvW3zTLu22BV0TgTJdvKixeVr0UhUUMr8Ate41/l6EdS9jcDDQyRvU785I+Ak46e+ZWMOmCvzhZ/wfFJw0Q8wRcBuYjoDCwWTi+ariA217NdxKeOJWgto++s3a2XEhjHi64m4fJnNziDfewb4vzUKnouQwypWsCfbPMH+MWZwyolbrCHvXCneokTsTIg8Wkrl0NkfyggU2Hw6RG7MPw9VWyMtQm94eXC/OUSrgMLWtmDSu+W9hTxvW9NeuiKMPahkPQIDAQAB"
+}

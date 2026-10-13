@@ -1,0 +1,13 @@
+[
+  {"id":"linux-webxr-issues","label":"Linux WebXR issues","kind":"github_issues","url":"https://api.github.com/repos/utzcoz/chromium-webxr-linux/issues?state=all&sort=updated&direction=desc&per_page=100"},
+  {"id":"frame-sandbox-comments","label":"Frame sandbox issue 7 comments","kind":"github_comments","url":"https://api.github.com/repos/utzcoz/chromium-webxr-linux/issues/7/comments?per_page=100"},
+  {"id":"chromium-linux-openxr","label":"Chromium Linux OpenXR reviews","kind":"gerrit","url":"https://chromium-review.googlesource.com/changes/?q=project%3Achromium%2Fsrc+OpenXR+Linux&n=50"},
+  {"id":"steam-frame-news","label":"Official Steam Frame OS and client news","kind":"steam_news","url":"https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=4165890&count=30&maxlength=0&feeds=steam_community_announcements"},
+  {"id":"steamvr-news","label":"Official SteamVR news","kind":"steam_news","url":"https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=250820&count=30&maxlength=0&feeds=steam_community_announcements"},
+  {"id":"steamvr-linux-issues","label":"SteamVR Linux issues","kind":"github_issues","url":"https://api.github.com/repos/ValveSoftware/SteamVR-for-Linux/issues?state=all&sort=updated&direction=desc&per_page=100"},
+  {"id":"chrome-xr-main","label":"Chrome XR integration main branch","kind":"github_commits","url":"https://api.github.com/repos/phit/chromium-webxr-steam-frame/commits?sha=main&per_page=30"},
+  {"id":"chrome-xr-google","label":"Chrome XR integration Google branch","kind":"github_commits","url":"https://api.github.com/repos/phit/chromium-webxr-steam-frame/commits?sha=google&per_page=30"},
+  {"id":"video2webxr","label":"video2webxr player changes","kind":"github_commits","url":"https://api.github.com/repos/phit/video2webxr/commits?per_page=30"},
+  {"id":"webxr-layers","label":"WebXR Layers specification issues","kind":"github_issues","url":"https://api.github.com/repos/immersive-web/layers/issues?state=all&sort=updated&direction=desc&per_page=100"},
+  {"id":"three-webxr","label":"three.js WebXR manager changes","kind":"github_commits","url":"https://api.github.com/repos/mrdoob/three.js/commits?path=src/renderers/webxr/WebXRManager.js&per_page=30"}
+]

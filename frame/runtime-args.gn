@@ -1,0 +1,21 @@
+# ARM64 VRWatch runtime: upstream Linux OpenXR and native stateful V4L2.
+target_os = "linux"
+target_cpu = "arm64"
+is_debug = false
+is_official_build = true
+is_component_build = false
+dcheck_always_on = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+use_remoteexec = false
+use_siso = true
+use_v4l2_codec = true
+use_vaapi = false
+enable_openxr = true
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+
+# VRWatch's video browser does not need the PDF viewer.
+enable_pdf = false
+enterprise_watermark = false

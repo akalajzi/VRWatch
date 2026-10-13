@@ -1,0 +1,83 @@
+--- a/extensions/browser/api/messaging/message_service.cc
++++ b/extensions/browser/api/messaging/message_service.cc
+@@ -653,6 +653,14 @@
+ #endif
+   }
+ 
++  // Non-tab extension views (including the VRWatch HUD) need the same
++  // browser-derived document identity as tabs. A view URL alone cannot prove
++  // which live document sent a privileged browser command.
++  if (source_render_frame_host && source_frame.document_id.is_empty()) {
++    source_frame = ExtensionApiFrameIdMap::Get()->GetFrameData(
++        source_render_frame_host->GetGlobalId());
++  }
++
+   std::unique_ptr<OpenChannelParams> params =
+       std::make_unique<OpenChannelParams>(
+           source, std::move(source_tab), source_frame, nullptr,
+--- a/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc
++++ b/chrome/browser/ui/views/frame/vrwatch_hud_browsertest.cc
+@@ -27,8 +27,27 @@
+   }
+   void SetUpOnMainThread() override {
+     ExtensionBrowserTest::SetUpOnMainThread();
+-    directory_.WriteManifest(R"({"manifest_version":3,"name":"VRWatch test","version":"0.1.2","key":"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApkAk+wANInwx9fRrtdkUZJmwfZiYoS/BZKA3reqNn3NodGlnCjKL7KjuZvT9CCLAqFAEcpd/apHdcaYyBBGGvW3zTLu22BV0TgTJdvKixeVr0UhUUMr8Ate41/l6EdS9jcDDQyRvU785I+Ak46e+ZWMOmCvzhZ/wfFJw0Q8wRcBuYjoDCwWTi+ariA217NdxKeOJWgto++s3a2XEhjHi64m4fJnNziDfewb4vzUKnouQwypWsCfbPMH+MWZwyolbrCHvXCneokTsTIg8Wkrl0NkfyggU2Hw6RG7MPw9VWyMtQm94eXC/OUSrgMLWtmDSu+W9hTxvW9NeuiKMPahkPQIDAQAB"})");
++    directory_.WriteManifest(R"({"manifest_version":3,"name":"VRWatch test","version":"0.1.2","permissions":["tabs"],"background":{"service_worker":"worker.js"},"key":"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApkAk+wANInwx9fRrtdkUZJmwfZiYoS/BZKA3reqNn3NodGlnCjKL7KjuZvT9CCLAqFAEcpd/apHdcaYyBBGGvW3zTLu22BV0TgTJdvKixeVr0UhUUMr8Ate41/l6EdS9jcDDQyRvU785I+Ak46e+ZWMOmCvzhZ/wfFJw0Q8wRcBuYjoDCwWTi+ariA217NdxKeOJWgto++s3a2XEhjHi64m4fJnNziDfewb4vzUKnouQwypWsCfbPMH+MWZwyolbrCHvXCneokTsTIg8Wkrl0NkfyggU2Hw6RG7MPw9VWyMtQm94eXC/OUSrgMLWtmDSu+W9hTxvW9NeuiKMPahkPQIDAQAB"})");
+     directory_.WriteFile(FILE_PATH_LITERAL("hud.html"), "<!doctype html><input autofocus><button>Hide</button>");
++    directory_.WriteFile(FILE_PATH_LITERAL("worker.js"), R"JS(
++      chrome.runtime.onMessage.addListener((message, sender, respond) => {
++        if (message === 'identify') {
++          respond({documentId: sender.documentId || '',
++                   frameId: sender.frameId ?? -99, hasTab: !!sender.tab});
++          return;
++        }
++        if (message === 'create') {
++          (async () => {
++            const owned = await chrome.vrwatchPrivate.request({
++              operation: 'authorizeHud', documentId: sender.documentId});
++            await chrome.tabs.create({windowId: owned.windowId,
++                                      url: 'about:blank', active: true});
++            respond({created: true});
++          })().catch(error => respond({error: error.message}));
++          return true;
++        }
++      });
++    )JS");
+     ASSERT_TRUE(LoadExtensionAsComponent(directory_.UnpackedPath()));
+     browser()->GetWindow()->Activate();
+     base::RunLoop().RunUntilIdle();
+@@ -91,3 +110,34 @@
+   }
+   EXPECT_TRUE(found);
+ }
++
++IN_PROC_BROWSER_TEST_F(VrwatchHudBrowserTest,
++                       HudMessageIdentityAuthorizesRealTabCreation) {
++  ASSERT_TRUE(runtime()->ShowHud("tabs"));
++  auto* view = BrowserView::GetBrowserViewForBrowser(browser());
++  content::WebContents* hud = nullptr;
++  for (views::View* child : view->children()) {
++    if (auto* extension_view = views::AsViewClass<ExtensionViewViews>(child)) {
++      hud = extension_view->web_contents();
++      break;
++    }
++  }
++  ASSERT_TRUE(hud);
++  ASSERT_TRUE(content::WaitForLoadStop(hud));
++  const auto document = content::EvalJs(hud,
++      "(async () => (await chrome.runtime.sendMessage('identify')).documentId)()")
++      .ExtractString();
++  EXPECT_FALSE(document.empty());
++  EXPECT_TRUE(runtime()->IsHudDocument(document));
++  EXPECT_EQ(0, content::EvalJs(hud,
++      "(async () => (await chrome.runtime.sendMessage('identify')).frameId)()"));
++  EXPECT_EQ(false, content::EvalJs(hud,
++      "(async () => (await chrome.runtime.sendMessage('identify')).hasTab)()"));
++  const int before = browser()->GetTabStripModel()->count();
++  EXPECT_EQ(true, content::EvalJs(hud,
++      "(async () => (await chrome.runtime.sendMessage('create')).created)()"));
++  EXPECT_EQ(before + 1, browser()->GetTabStripModel()->count());
++  EXPECT_EQ(*runtime()->State().FindString("hudView"), "closed");
++  EXPECT_FALSE(runtime()->IsHudDocument(
++      *runtime()->State().FindString("documentId")));
++}

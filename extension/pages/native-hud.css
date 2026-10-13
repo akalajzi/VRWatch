@@ -1,0 +1,15 @@
+:root{color-scheme:dark;--bg:#101114;--surface:#1c1e23;--ink:#f1f2f4;--muted:#92959e;--line:#303239;--accent:#a7dfd9;font:14px system-ui,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+body{margin:0}main{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+/* Chromium supplies a floating host; native.2 places it across the top. Never reserve page space. */
+.dock{position:relative;inset:auto;flex:none;grid-template-columns:52px auto minmax(100px,1fr) auto;padding:12px;gap:8px}
+#picker{display:flex;flex-direction:column;min-height:0;flex:1;padding:16px 20px 8px;width:100%;max-width:1120px;align-self:center}
+.heading{flex:none;margin-bottom:14px}.heading h1{font-size:24px}.summary{margin-bottom:0}
+#cards{overflow:auto;overscroll-behavior:contain;min-height:0;align-content:start;gap:16px;padding:4px}
+.preview{aspect-ratio:2.4/1;position:relative}.preview>img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}.preview>img:not([src]){display:none}
+.fallback{position:absolute;inset:0}.preview:has(>img[src]) .fallback{display:none}
+.caption{min-height:66px;padding:12px}.page-icon>img{object-fit:contain}.page-icon>img:not([src]){display:none}
+.page-title{font-size:15px}.current-label{font-size:11px}
+#status{flex:none;margin:0;padding:8px 16px;min-height:32px;max-height:64px;overflow:auto;color:#ffc0b4;font-size:13px;overflow-wrap:anywhere}
+#status:empty{color:var(--muted)}button[aria-busy=true]{outline:2px solid var(--accent);outline-offset:-2px}
+@media(max-width:760px){.dock{grid-template-columns:52px 1fr auto;gap:6px;padding:8px 12px}.dock>.address-field{grid-column:1/-1;grid-row:2}.dock>.actions:last-child{grid-column:3;grid-row:1}.dock>.brand-toggle{grid-row:1}.actions{justify-content:flex-end}.action{width:44px;min-width:44px;height:44px;min-height:44px}#picker{padding:10px 12px 4px}.heading{margin-bottom:8px}.heading h1{font-size:20px}.tools{gap:6px}}
+@media(max-width:480px){.dock{grid-template-columns:44px 1fr auto;padding:6px;gap:3px}.dock>.brand-toggle{width:44px;height:44px;min-width:44px}.actions{gap:0}.action{width:34px;min-width:34px;padding:5px}.new-tab{font-size:13px;padding:8px}.heading{gap:6px}#cards{grid-template-columns:1fr}}

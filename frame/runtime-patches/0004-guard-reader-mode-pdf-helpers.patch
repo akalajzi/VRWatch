@@ -1,0 +1,82 @@
+diff --git a/chrome/browser/ui/read_anything/read_anything_entry_point_controller.cc b/chrome/browser/ui/read_anything/read_anything_entry_point_controller.cc
+index ea625d1096..ff23eacdce 100644
+--- a/chrome/browser/ui/read_anything/read_anything_entry_point_controller.cc
++++ b/chrome/browser/ui/read_anything/read_anything_entry_point_controller.cc
+@@ -134,15 +134,10 @@ void RunPdfDistillableHeuristic(
+       /*page_index=*/0,
+       base::BindOnce(&OnPdfTextReceived, std::move(result_callback)));
+ }
+-#endif
+-
+ pdf::PDFDocumentHelper* GetPdf(content::WebContents& contents) {
+-#if BUILDFLAG(ENABLE_PDF)
+   return pdf::PDFDocumentHelper::MaybeGetForWebContents(contents);
+-#else
+-  return nullptr;
+-#endif
+ }
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+ void OnReadabilityDecision(base::OnceCallback<void(bool)> result_callback,
+                            bool should_show) {
+@@ -174,10 +169,12 @@ void OnOptimizationGuideDecision(
+ 
+   // This check is already done in CheckIfShouldSuggestReadingMode but it's
+   // possible that the page was not detected as a PDF yet so check again.
++#if BUILDFLAG(ENABLE_PDF)
+   if (auto* pdf_helper = GetPdf(*contents)) {
+     RunPdfDistillableHeuristic(pdf_helper, std::move(result_callback));
+     return;
+   }
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+   switch (decision) {
+     case optimization_guide::OptimizationGuideDecision::kFalse:
+@@ -222,10 +219,12 @@ static int check_count_;
+ 
+ namespace read_anything {
+ 
++#if BUILDFLAG(ENABLE_PDF)
+ base::AutoReset<size_t>
+ ReadAnythingEntryPointController::SetMinPdfTextLengthForTesting(size_t length) {
+   return {&g_min_pdf_text_length_for_omnibox, length};
+ }
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+ // static
+ void ReadAnythingEntryPointController::InvokePageAction(
+@@ -449,10 +448,12 @@ void ReadAnythingEntryPointController::CheckIfShouldSuggestReadingMode(
+     return;
+   }
+   content::WebContents* contents = tab->GetContents();
++#if BUILDFLAG(ENABLE_PDF)
+   if (auto* pdf_helper = GetPdf(*contents)) {
+     RunPdfDistillableHeuristic(pdf_helper, std::move(result_callback));
+     return;
+   }
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+   auto* optimization_guide_decider =
+       OptimizationGuideKeyedServiceFactory::GetForProfile(bwi->GetProfile());
+diff --git a/chrome/browser/ui/read_anything/read_anything_entry_point_controller.h b/chrome/browser/ui/read_anything/read_anything_entry_point_controller.h
+index 7bf1a2af64..073bb38c95 100644
+--- a/chrome/browser/ui/read_anything/read_anything_entry_point_controller.h
++++ b/chrome/browser/ui/read_anything/read_anything_entry_point_controller.h
+@@ -9,6 +9,7 @@
+ #include "chrome/browser/ui/read_anything/read_anything_enums.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "components/user_education/common/feature_promo/feature_promo_result.h"
++#include "pdf/buildflags.h"
+ #include "ui/actions/actions.h"
+ 
+ using read_anything::mojom::ReadAnythingOpenTrigger;
+@@ -64,7 +65,9 @@ class ReadAnythingEntryPointController {
+       BrowserWindowInterface* bwi,
+       base::OnceCallback<void(bool)> result_callback);
+ 
++#if BUILDFLAG(ENABLE_PDF)
+   static base::AutoReset<size_t> SetMinPdfTextLengthForTesting(size_t length);
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+   static int CheckCountForTesting();
+   static void ResetCheckCountForTesting();

@@ -1,0 +1,506 @@
+diff --git a/chrome/browser/extensions/BUILD.gn b/chrome/browser/extensions/BUILD.gn
+index d4e2fecbbe..6e650ee0d0 100644
+--- a/chrome/browser/extensions/BUILD.gn
++++ b/chrome/browser/extensions/BUILD.gn
+@@ -2447,6 +2447,7 @@ source_set("browser_tests") {
+     "extension_dom_clipboard_apitest.cc",
+     "extension_frame_host_browsertest.cc",
+     "extension_function_registration_browsertest.cc",
++    "api/vrwatch_private/vrwatch_runtime_browsertest.cc",
+     "extension_functional_browsertest.cc",
+     "extension_geolocation_apitest.cc",
+     "extension_icon_source_apitest.cc",
+diff --git a/chrome/browser/extensions/api/BUILD.gn b/chrome/browser/extensions/api/BUILD.gn
+index ccfaca61af..b01ef721b6 100644
+--- a/chrome/browser/extensions/api/BUILD.gn
++++ b/chrome/browser/extensions/api/BUILD.gn
+@@ -70,6 +70,7 @@ group("api_implementations") {
+       "//chrome/browser/extensions/api/autofill_private",
+       "//chrome/browser/extensions/api/braille_display_private",
+       "//chrome/browser/extensions/api/command_line_private",
++      "//chrome/browser/extensions/api/vrwatch_private",
+       "//chrome/browser/extensions/api/dictation_private",
+       "//chrome/browser/extensions/api/experimental_actor",
+       "//chrome/browser/extensions/api/experimental_ai_data",
+diff --git a/chrome/browser/extensions/api/vrwatch_private/BUILD.gn b/chrome/browser/extensions/api/vrwatch_private/BUILD.gn
+new file mode 100644
+index 0000000000..936ae61a1f
+--- /dev/null
++++ b/chrome/browser/extensions/api/vrwatch_private/BUILD.gn
+@@ -0,0 +1,20 @@
++import("//extensions/buildflags/buildflags.gni")
++assert(enable_extensions)
++source_set("vrwatch_private") {
++  sources = [ "vrwatch_private_api.cc", "vrwatch_private_api.h" ]
++  public_deps = [ "//extensions/browser" ]
++  deps = [ ":runtime", "//chrome/browser/profiles:profile", "//chrome/browser/ui/browser_window", "//chrome/browser/ui/tabs:tab_strip", "//content/public/browser" ]
++}
++source_set("runtime") {
++  sources = [ "vrwatch_runtime.cc", "vrwatch_runtime.h" ]
++  public_deps = [ "//base", "//chrome/browser/ui/tabs:tab_strip_model_observer" ]
++  deps = [
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/ui/browser_window",
++    "//chrome/browser/ui/tabs:tab_strip",
++    "//components/sessions",
++    "//content/public/browser",
++    "//extensions/browser",
++    "//ui/base",
++  ]
++}
+diff --git a/chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.cc b/chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.cc
+new file mode 100644
+index 0000000000..8ff063f5f6
+--- /dev/null
++++ b/chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.cc
+@@ -0,0 +1,37 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.h"
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "content/public/browser/web_contents.h"
++namespace extensions {
++ExtensionFunction::ResponseAction VrwatchPrivateRequestFunction::Run() {
++  if (extension_id() != kVrwatchId || args().size() != 1 || !args()[0].is_dict())
++    return RespondNow(Error("Untrusted VRWatch caller"));
++  auto* runtime = VrwatchRuntime::ForProfile(Profile::FromBrowserContext(browser_context()));
++  if (!runtime) return RespondNow(Error("VRWatch window is closed"));
++  const auto& request = args()[0].GetDict();
++  const auto* operation = request.FindString("operation");
++  if (!operation) return RespondNow(Error("Missing operation"));
++  if (*operation == "xr") {
++    auto error = runtime->SetXR(request);
++    if (!error.empty()) return RespondNow(Error(error));
++  } else if (*operation == "hud") {
++    const auto* view = request.FindString("view");
++    if (!view || (*view != "closed" && *view != "navigation" && *view != "tabs") ||
++        !runtime->ShowHud(*view)) return RespondNow(Error("HUD unavailable"));
++  } else if (*operation == "authorizeHud") {
++    const auto* document = request.FindString("documentId");
++    if (!document || !runtime->IsHudDocument(*document))
++      return RespondNow(Error("Unowned HUD document"));
++  } else if (*operation == "stop") {
++    auto* active = runtime->browser()->GetTabStripModel()->GetActiveWebContents();
++    if (active) active->Stop();
++  } else if (*operation != "state") {
++    return RespondNow(Error("Unknown VRWatch operation"));
++  }
++  return RespondNow(WithArguments(runtime->State()));
++}
++}
+diff --git a/chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.h b/chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.h
+new file mode 100644
+index 0000000000..fcd61d7716
+--- /dev/null
++++ b/chrome/browser/extensions/api/vrwatch_private/vrwatch_private_api.h
+@@ -0,0 +1,15 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#ifndef CHROME_BROWSER_EXTENSIONS_API_VRWATCH_PRIVATE_API_H_
++#define CHROME_BROWSER_EXTENSIONS_API_VRWATCH_PRIVATE_API_H_
++#include "extensions/browser/extension_function.h"
++namespace extensions {
++class VrwatchPrivateRequestFunction : public ExtensionFunction {
++ public:
++  DECLARE_EXTENSION_FUNCTION("vrwatchPrivate.request", UNKNOWN)
++ private:
++  ~VrwatchPrivateRequestFunction() override = default;
++  ResponseAction Run() override;
++};
++}
++#endif
+diff --git a/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.cc b/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.cc
+new file mode 100644
+index 0000000000..f6d9339475
+--- /dev/null
++++ b/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.cc
+@@ -0,0 +1,175 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h"
++#include <map>
++#include "base/command_line.h"
++#include "base/no_destructor.h"
++#include "base/scoped_observation.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_process_host.h"
++#include "content/public/browser/render_process_host_observer.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "components/sessions/content/session_tab_helper.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "extensions/browser/event_router.h"
++#include "extensions/browser/extension_api_frame_id_map.h"
++#include "ui/base/base_window.h"
++namespace extensions {
++namespace {
++auto& Runtimes() {
++  static base::NoDestructor<std::map<const Profile*, VrwatchRuntime*>> runtimes;
++  return *runtimes;
++}
++std::string Document(content::WebContents* contents) {
++  return contents ? ExtensionApiFrameIdMap::GetDocumentId(
++      contents->GetPrimaryMainFrame()).ToString() : std::string();
++}
++}
++class VrwatchRuntime::Origin : public content::WebContentsObserver,
++                               public content::RenderProcessHostObserver {
++ public:
++  Origin(VrwatchRuntime* owner, content::WebContents* contents, content::RenderFrameHost* frame)
++      : content::WebContentsObserver(contents), owner_(owner) {
++    process_.Observe(frame->GetProcess());
++  }
++  void Detach() { process_.Reset(); Observe(nullptr); }
++  void RenderProcessExited(content::RenderProcessHost*, const content::ChildProcessTerminationInfo&) override { owner_->LoseOrigin(); }
++  void RenderProcessHostDestroyed(content::RenderProcessHost*) override { owner_->LoseOrigin(); }
++  void RenderFrameDeleted(content::RenderFrameHost* frame) override {
++    if (ExtensionApiFrameIdMap::GetDocumentId(frame).ToString() == owner_->document_) owner_->LoseOrigin();
++  }
++  void DidFinishNavigation(content::NavigationHandle* handle) override {
++    if (!handle->HasCommitted() || handle->IsSameDocument()) return;
++    auto* frame = ExtensionApiFrameIdMap::GetRenderFrameHostById(web_contents(), owner_->frame_id_);
++    if (!frame || ExtensionApiFrameIdMap::GetDocumentId(frame).ToString() != owner_->document_) owner_->LoseOrigin();
++  }
++  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
++    owner_->LoseOrigin();
++  }
++  void WebContentsDestroyed() override { owner_->LoseOrigin(); }
++ private:
++  raw_ptr<VrwatchRuntime> owner_;
++  base::ScopedObservation<content::RenderProcessHost, content::RenderProcessHostObserver> process_{this};
++};
++bool VrwatchRuntime::Enabled(const BrowserWindowInterface* browser) {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch("vrwatch-native") &&
++      browser->GetType() == BrowserWindowInterface::TYPE_NORMAL &&
++      !browser->GetProfile()->IsOffTheRecord();
++}
++VrwatchRuntime::VrwatchRuntime(BrowserWindowInterface* browser) : browser_(browser) {
++  CHECK(Enabled(browser));
++  CHECK(!Runtimes().contains(browser->GetProfile()));
++  Runtimes()[browser->GetProfile()] = this;
++  browser_->GetTabStripModel()->AddObserver(this);
++}
++VrwatchRuntime::~VrwatchRuntime() {
++  browser_->GetTabStripModel()->RemoveObserver(this);
++  Runtimes().erase(browser_->GetProfile());
++  origin_.reset();
++  Notify();
++}
++VrwatchRuntime* VrwatchRuntime::ForProfile(const Profile* profile) {
++  auto found = Runtimes().find(profile);
++  return found == Runtimes().end() ? nullptr : found->second;
++}
++base::DictValue VrwatchRuntime::State() const {
++  auto* active = browser_->GetTabStripModel()->GetActiveWebContents();
++  base::DictValue result;
++  result.Set("windowId", browser_->GetSessionID().id());
++  result.Set("activeTabId", active ? sessions::SessionTabHelper::IdForTab(active).id() : -1);
++  result.Set("documentId", Document(active));
++  result.Set("focused", browser_->GetWindow()->IsActive());
++  result.Set("hudView", hud_view_);
++  result.Set("hudDocumentId", Document(hud_));
++  result.Set("restoreSequence", restore_sequence_);
++  if (!session_.empty() && origin_ && origin_->web_contents()) {
++    result.Set("xr", base::DictValue()
++        .Set("tabId", sessions::SessionTabHelper::IdForTab(origin_->web_contents()).id())
++        .Set("documentId", document_).Set("frameId", frame_id_).Set("session", session_));
++  }
++  return result;
++}
++std::string VrwatchRuntime::SetXR(const base::DictValue& request) {
++  auto tab = request.FindInt("tabId");
++  const auto* document = request.FindString("documentId");
++  const auto* session = request.FindString("session");
++  auto active = request.FindBool("active");
++  const int frame_id = request.FindInt("frameId").value_or(0);
++  if (!tab || !document || !session || session->empty() || session->size() > 80 || !active)
++    return "Invalid XR identity";
++  auto* model = browser_->GetTabStripModel();
++  content::WebContents* contents = nullptr;
++  for (int i = 0; i < model->count(); ++i) {
++    auto* item = model->GetWebContentsAt(i);
++    if (sessions::SessionTabHelper::IdForTab(item).id() == *tab) contents = item;
++  }
++  auto* frame = contents ? ExtensionApiFrameIdMap::GetRenderFrameHostById(contents, frame_id) : nullptr;
++  if (!frame || !frame->IsActive() || !frame->IsRenderFrameLive() ||
++      ExtensionApiFrameIdMap::GetDocumentId(frame).ToString() != *document) return "Stale XR document";
++  if (*active) {
++    if (!session_.empty())
++      return session_ == *session && document_ == *document ? "" : "XR already owned";
++    // XR attachment can transfer OS focus before the content adapter reports
++    // success. The selected tab and live document remain authoritative here.
++    if (contents != model->GetActiveWebContents())
++      return "XR origin is not active";
++    origin_ = std::make_unique<Origin>(this, contents, frame);
++    frame_id_ = frame_id;
++    document_ = *document;
++    session_ = *session;
++    ShowHud("closed");
++  } else {
++    if (session_ != *session || document_ != *document) return "Stale XR session";
++    // Focus the verified surviving origin before signalling dashboard restore.
++    model->ActivateTabAt(model->GetIndexOfWebContents(contents));
++    browser_->GetWindow()->Activate();
++    origin_.reset();
++    session_.clear();
++    document_.clear();
++    ++restore_sequence_;
++  }
++  Notify();
++  return "";
++}
++void VrwatchRuntime::LoseOrigin() {
++  // The observer can call this on its own stack: detach, do not delete it here.
++  if (origin_) origin_->Detach();
++  if (session_.empty()) return;
++  session_.clear();
++  document_.clear();
++  ++restore_sequence_;
++  Notify();
++}
++void VrwatchRuntime::OnTabStripModelChanged(
++    TabStripModel* model, const TabStripModelChange&,
++    const TabStripSelectionChange& selection) {
++  if (selection.active_tab_changed()) ShowHud("closed");
++  if (origin_ && origin_->web_contents() &&
++      model->GetIndexOfWebContents(origin_->web_contents()) < 0) LoseOrigin();
++  Notify();
++}
++void VrwatchRuntime::SetHudHandler(base::RepeatingCallback<bool(const std::string&)> handler) {
++  hud_handler_ = std::move(handler);
++}
++bool VrwatchRuntime::ShowHud(const std::string& view) {
++  if (view != "closed" && !session_.empty()) return false;
++  return hud_handler_ && hud_handler_.Run(view);
++}
++void VrwatchRuntime::HudChanged(content::WebContents* contents, const std::string& view) {
++  hud_ = contents;
++  hud_view_ = view;
++  Notify();
++}
++bool VrwatchRuntime::IsHudDocument(const std::string& document) const {
++  return hud_ && !document.empty() && Document(hud_) == document;
++}
++void VrwatchRuntime::Notify() {
++  auto* router = EventRouter::Get(browser_->GetProfile());
++  if (router) router->DispatchEventToExtension(kVrwatchId,
++      std::make_unique<Event>(events::UNKNOWN, "vrwatchPrivate.onChanged", base::ListValue()));
++}
++}
+diff --git a/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h b/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h
+new file mode 100644
+index 0000000000..8044a5e687
+--- /dev/null
++++ b/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h
+@@ -0,0 +1,47 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#ifndef CHROME_BROWSER_EXTENSIONS_API_VRWATCH_PRIVATE_VRWATCH_RUNTIME_H_
++#define CHROME_BROWSER_EXTENSIONS_API_VRWATCH_PRIVATE_VRWATCH_RUNTIME_H_
++#include <memory>
++#include <string>
++#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
++#include "base/values.h"
++#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
++class BrowserWindowInterface;
++class Profile;
++namespace content { class WebContents; }
++namespace extensions {
++inline constexpr char kVrwatchId[] = "bkjijegjmneghekcknijmioimbahmfap";
++// Browser lifetime, independent of the extension worker and native process.
++class VrwatchRuntime : public TabStripModelObserver {
++ public:
++  explicit VrwatchRuntime(BrowserWindowInterface* browser);
++  ~VrwatchRuntime() override;
++  static bool Enabled(const BrowserWindowInterface* browser);
++  static VrwatchRuntime* ForProfile(const Profile* profile);
++  BrowserWindowInterface* browser() const { return browser_; }
++  base::DictValue State() const;
++  std::string SetXR(const base::DictValue& request);
++  void SetHudHandler(base::RepeatingCallback<bool(const std::string&)> handler);
++  bool ShowHud(const std::string& view);
++  void HudChanged(content::WebContents* contents, const std::string& view);
++  bool IsHudDocument(const std::string& document) const;
++  void Notify();
++ private:
++  class Origin;
++  void LoseOrigin();
++  void OnTabStripModelChanged(TabStripModel*, const TabStripModelChange&,
++                             const TabStripSelectionChange&) override;
++  raw_ptr<BrowserWindowInterface> browser_;
++  std::unique_ptr<Origin> origin_;
++  std::string document_;
++  int frame_id_ = 0;
++  std::string session_;
++  int restore_sequence_ = 0;
++  raw_ptr<content::WebContents> hud_ = nullptr;
++  std::string hud_view_ = "closed";
++  base::RepeatingCallback<bool(const std::string&)> hud_handler_;
++};
++}
++#endif
+diff --git a/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime_browsertest.cc b/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime_browsertest.cc
+new file mode 100644
+index 0000000000..f72a85414f
+--- /dev/null
++++ b/chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime_browsertest.cc
+@@ -0,0 +1,51 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license.
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h"
++#include "base/command_line.h"
++#include "base/run_loop.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "content/public/test/browser_test.h"
++#include "content/public/test/no_renderer_crashes_assertion.h"
++#include "content/public/test/browser_test_utils.h"
++#include "ui/base/base_window.h"
++class VrwatchRuntimeBrowserTest : public InProcessBrowserTest {
++ public:
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    command_line->AppendSwitch("vrwatch-native");
++  }
++};
++IN_PROC_BROWSER_TEST_F(VrwatchRuntimeBrowserTest, DocumentAndSessionOwnership) {
++  auto* runtime = extensions::VrwatchRuntime::ForProfile(browser()->GetProfile());
++  ASSERT_TRUE(runtime);
++  browser()->GetWindow()->Activate();
++  base::RunLoop().RunUntilIdle();
++  auto state = runtime->State();
++  auto request = base::DictValue().Set("tabId", *state.FindInt("activeTabId"))
++      .Set("documentId", *state.FindString("documentId"))
++      .Set("session", "session-a").Set("active", true);
++  EXPECT_TRUE(runtime->SetXR(request).empty());
++  EXPECT_TRUE(runtime->SetXR(request).empty());  // Reconnect is idempotent.
++  request.Set("session", "session-b");
++  EXPECT_FALSE(runtime->SetXR(request).empty());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("data:text/html,new")));
++  EXPECT_FALSE(runtime->State().FindDict("xr"));
++  EXPECT_EQ(runtime->State().FindInt("restoreSequence"), 1);
++  request.Set("session", "session-a");
++  request.Set("active", false);
++  EXPECT_FALSE(runtime->SetXR(request).empty());
++}
++IN_PROC_BROWSER_TEST_F(VrwatchRuntimeBrowserTest, CrashClearsOrigin) {
++  auto* runtime = extensions::VrwatchRuntime::ForProfile(browser()->GetProfile());
++  browser()->GetWindow()->Activate();
++  base::RunLoop().RunUntilIdle();
++  auto state = runtime->State();
++  EXPECT_TRUE(runtime->SetXR(base::DictValue().Set("tabId", *state.FindInt("activeTabId"))
++      .Set("documentId", *state.FindString("documentId"))
++      .Set("session", "session-a").Set("active", true)).empty());
++  content::ScopedAllowRendererCrashes allow;
++  content::CrashTab(browser()->GetTabStripModel()->GetActiveWebContents());
++  EXPECT_FALSE(runtime->State().FindDict("xr"));
++}
+diff --git a/chrome/common/extensions/api/_api_features.json b/chrome/common/extensions/api/_api_features.json
+index 340a5e03ac..cce0d6e221 100644
+--- a/chrome/common/extensions/api/_api_features.json
++++ b/chrome/common/extensions/api/_api_features.json
+@@ -11,6 +11,11 @@
+ // renderer.
+ 
+ {
++  "vrwatchPrivate": {
++    "channel": "stable", "contexts": ["privileged_extension"],
++    "extension_types": ["extension"], "location": "component",
++    "allowlist": ["247D7CA84D9BA83E917E48BC75821BFC2F65535D", "859940C31A55620A7758966A64B069731D5AE652531AF7555322E59186A34486"]
++  },
+   "accessibilityFeatures": [{
+     "dependencies": ["permission:accessibilityFeatures.modify"],
+     "contexts": ["privileged_extension"]
+diff --git a/chrome/common/extensions/api/api_sources.gni b/chrome/common/extensions/api/api_sources.gni
+index acdc60b675..8db8677022 100644
+--- a/chrome/common/extensions/api/api_sources.gni
++++ b/chrome/common/extensions/api/api_sources.gni
+@@ -80,6 +80,7 @@ if (enable_extensions) {
+     "bookmark_manager_private.json",
+     "braille_display_private.webidl",
+     "command_line_private.json",
++    "vrwatch_private.json",
+     "crash_report_private.webidl",
+     "dictation_private.webidl",
+     "enterprise_reporting_private.webidl",
+diff --git a/chrome/common/extensions/api/vrwatch_private.json b/chrome/common/extensions/api/vrwatch_private.json
+new file mode 100644
+index 0000000000..421f71f610
+--- /dev/null
++++ b/chrome/common/extensions/api/vrwatch_private.json
+@@ -0,0 +1,9 @@
++[{
++  "namespace": "vrwatchPrivate",
++  "description": "Browser-owned VRWatch window and XR lifecycle.",
++  "functions": [{"name": "request", "type": "function",
++    "parameters": [{"name": "request", "type": "object", "additionalProperties": {"type": "any"}}],
++    "returns_async": {"name": "callback", "parameters": [{"name": "state", "type": "object", "additionalProperties": {"type": "any"}}]}
++  }],
++  "events": [{"name": "onChanged", "type": "function", "parameters": []}]
++}]
+diff --git a/chrome/browser/ui/views/frame/BUILD.gn b/chrome/browser/ui/views/frame/BUILD.gn
+index 2fbde88963..95c5a9224d 100644
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -718,8 +718,9 @@ source_set("windows_icon_painter") {
+ # into the browser view can depend on it without depending on :ui, which would
+ # be circular for the many targets that :ui itself depends on.
+ source_set("browser_view_header") {
++  public_deps = [ "//chrome/browser/extensions/api/vrwatch_private:runtime" ]
+   public = [ "browser_view.h" ]
+-  public_deps = [
++  public_deps += [
+     ":browser_view_layout_params",
+     ":browser_widget",
+     ":contents_container_view",
+diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
+index d441b8a76b..5c1c744350 100644
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -1108,6 +1108,7 @@ BrowserView::BrowserView(BrowserWindowInterface* browser)
+ }
+ 
+ BrowserView::~BrowserView() {
++  vrwatch_runtime_.reset();
+   // Remove the layout manager to avoid dangling. This needs to be earlier than
+   // other cleanups that destroy views referenced in the layout manager.
+   SetLayoutManager(nullptr);
+@@ -5171,6 +5172,10 @@ void BrowserView::AddedToWidget() {
+   fallback_popup_anchor_ = std::make_unique<views::ViewSubregionAnchor>(
+       kFallbackPopupAnchorElementId, *this);
+ 
++  if (extensions::VrwatchRuntime::Enabled(browser()) &&
++      !extensions::VrwatchRuntime::ForProfile(browser()->GetProfile())) {
++    vrwatch_runtime_ = std::make_unique<extensions::VrwatchRuntime>(browser());
++  }
+   initialized_ = true;
+ }
+ 
+diff --git a/chrome/browser/ui/views/frame/browser_view.h b/chrome/browser/ui/views/frame/browser_view.h
+index e7bfac16bd..e42cdf9420 100644
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -7,6 +7,7 @@
+ 
+ #include <map>
+ #include <memory>
++#include "chrome/browser/extensions/api/vrwatch_private/vrwatch_runtime.h"
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -1257,6 +1258,7 @@ class BrowserView : public BrowserWindow,
+   std::map<ui::Accelerator, int> accelerator_table_;
+ 
+   // True if we have already been initialized.
++  std::unique_ptr<extensions::VrwatchRuntime> vrwatch_runtime_;
+   bool initialized_ = false;
+ 
+   // True if layout should be suppressed (used during teardown).

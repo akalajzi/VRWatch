@@ -1,0 +1,38 @@
+diff --git a/chrome/browser/plugins/plugin_response_interceptor_url_loader_throttle.cc b/chrome/browser/plugins/plugin_response_interceptor_url_loader_throttle.cc
+index 73eb039124..3589f67167 100644
+--- a/chrome/browser/plugins/plugin_response_interceptor_url_loader_throttle.cc
++++ b/chrome/browser/plugins/plugin_response_interceptor_url_loader_throttle.cc
+@@ -163,6 +163,7 @@ void PluginResponseInterceptorURLLoaderThrottle::WillProcessResponse(
+       request_destination_ != network::mojom::RequestDestination::kDocument;
+ 
+   std::string extension_id;
++#if BUILDFLAG(ENABLE_PDF)
+   if (response_head->mime_type == pdf::kPDFMimeType) {
+     // A generic MIME handler extension called
+     // chrome.mimeHandler.abortAndFallbackToNativeHandler() on a prior
+@@ -179,6 +180,7 @@ void PluginResponseInterceptorURLLoaderThrottle::WillProcessResponse(
+       extension_id = extension_misc::kPdfExtensionId;
+     }
+   }
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+   if (extension_id.empty()) {
+     extension_id = PluginUtils::GetExtensionIdForMimeType(
+@@ -335,13 +337,16 @@ void PluginResponseInterceptorURLLoaderThrottle::WillProcessResponse(
+   // does today rather than changed alongside this. On forwarding-pipe
+   // creation failure the original source handle is returned via
+   // `forwarding_pipe`, so the body is never lost.
++#if BUILDFLAG(ENABLE_PDF)
+   if (is_for_generic_mime_handler && original_mime_type == pdf::kPDFMimeType &&
+       chrome_pdf::features::IsOopifPdfEnabled()) {
+     mojo::ScopedDataPipeConsumerHandle forwarding_pipe;
+     body_cache = extensions::MimeHandlerBodyCache::Create(
+         std::move(consumer_handle), &forwarding_pipe);
+     transferrable_loader->body = std::move(forwarding_pipe);
+-  } else {
++  } else
++#endif  // BUILDFLAG(ENABLE_PDF)
++  {
+     transferrable_loader->body = std::move(consumer_handle);
+   }
+   transferrable_loader->url_loader_client = std::move(original_client);

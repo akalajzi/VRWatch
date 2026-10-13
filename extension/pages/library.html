@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="library-token" content="">
+  <title>Media library · VRWatch</title>
+  <link rel="icon" href="/assets/icons/icon32.png">
+  <link rel="stylesheet" href="/assets/library.css">
+  <link rel="stylesheet" href="/assets/scrollbars.css">
+</head>
+<body>
+  <header class="library-bar"><a id="home" class="brand" aria-label="VRWatch home"><img src="/assets/icons/icon128.png" alt=""><span>VRWatch</span></a><span class="bar-label">Media library</span></header>
+  <main>
+    <section id="browser" aria-labelledby="library-title">
+      <div class="heading"><div><p class="eyebrow">YOUR VIDEOS</p><h1 id="library-title">Media library</h1><p class="subtitle">Open a folder, pick a video, and watch.</p></div><button id="refresh" type="button">Refresh</button></div>
+      <div class="toolbar"><label class="source-label" for="source">Drive<select id="source" aria-label="Media drive"></select></label><label class="filter-label" for="filter">Find in this folder<input id="filter" type="search" placeholder="Filter folders and videos" autocomplete="off"></label></div>
+      <nav id="breadcrumbs" aria-label="Folder path"></nav>
+      <div class="list-heading"><span>Folders &amp; videos</span><span id="count"></span></div>
+      <p id="status" role="status" aria-live="polite"></p>
+      <div id="entries" class="entries" aria-label="Folders and videos" aria-busy="true"></div>
+      <p class="footnote">Playback depends on the file’s video and audio formats.</p>
+    </section>
+    <section id="player" aria-labelledby="video-title" hidden>
+      <button id="back-to-folder" type="button">← Back to folder</button>
+      <h1 id="video-title"></h1>
+      <video id="library-video" controls playsinline preload="metadata"></video>
+      <p id="video-status" role="status" aria-live="polite">Start playback, then use the VRWatch button beside the video to watch in VR.</p>
+    </section>
+  </main>
+  <script src="/assets/library.js"></script>
+</body>
+</html>

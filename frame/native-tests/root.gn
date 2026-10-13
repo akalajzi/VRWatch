@@ -1,0 +1,4 @@
+group("tests") {
+  testonly = true
+  deps = [ "//chrome/test:vrwatch_browser_tests", "//chrome/test:vrwatch_unit_tests" ]
+}

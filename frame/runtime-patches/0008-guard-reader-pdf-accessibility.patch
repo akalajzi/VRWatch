@@ -1,0 +1,64 @@
+diff --git a/chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_page_handler.cc b/chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_page_handler.cc
+index dc1a355b0f..d58b509327 100644
+--- a/chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_page_handler.cc
++++ b/chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_page_handler.cc
+@@ -281,10 +281,15 @@ constexpr std::string_view kRendererSelectionRequestHistogram =
+ // The contents MIME type is fixed when the main frame commits, so this reliably
+ // identifies full-page PDFs before their content frame exists.
+ bool IsFullPagePdf(content::WebContents* contents) {
++#if BUILDFLAG(ENABLE_PDF)
+   return contents && contents->GetContentsMimeType() == pdf::kPDFMimeType;
++#else
++  return false;
++#endif
+ }
+ 
+ bool IsPdfContents(content::WebContents* contents, bool has_pdf_observer) {
++#if BUILDFLAG(ENABLE_PDF)
+   if (!contents) {
+     return false;
+   }
+@@ -292,6 +297,9 @@ bool IsPdfContents(content::WebContents* contents, bool has_pdf_observer) {
+              ? !!extensions::mime_handler::MimeHandlerStreamManager::
+                     FromWebContents(contents)
+              : has_pdf_observer;
++#else
++  return false;
++#endif
+ }
+ 
+ // Returns the frame hosting the PDF's contents, or nullptr if `contents` is
+@@ -305,6 +313,7 @@ bool IsPdfContents(content::WebContents* contents, bool has_pdf_observer) {
+ // frame is the child of the embedder host. This mirrors the resolution used by
+ // printing (printing::GetRenderFrameHostToUse) and Mahi
+ // (mahi::GetPDFRenderFrameHost).
++#if BUILDFLAG(ENABLE_PDF)
+ content::RenderFrameHost* FindPdfContentFrame(content::WebContents* contents) {
+   content::RenderFrameHost* embedder_host =
+       chrome_pdf::features::IsOopifPdfEnabled()
+@@ -313,6 +322,7 @@ content::RenderFrameHost* FindPdfContentFrame(content::WebContents* contents) {
+   return embedder_host ? pdf_frame_util::FindPdfChildFrame(embedder_host)
+                        : nullptr;
+ }
++#endif  // BUILDFLAG(ENABLE_PDF)
+ 
+ // Returns whether `rfh` is a subframe of the primary page that the primary main
+ // frame can already script, i.e. it is same-origin with it. Opaque main frame
+@@ -932,6 +942,7 @@ bool ReadAnythingUntrustedPageHandler::IsObservingTree(
+            IsWhatsNewEmbeddedContentFrame(rfh, main_frame);
+   }
+ 
++#if BUILDFLAG(ENABLE_PDF)
+   content::RenderFrameHost* pdf_rfh =
+       chrome_pdf::features::IsOopifPdfEnabled()
+           ? pdf_frame_util::FindFullPagePdfExtensionHost(contents)
+@@ -948,6 +959,9 @@ bool ReadAnythingUntrustedPageHandler::IsObservingTree(
+   // host or the content frame succeed.
+   return chrome_pdf::features::IsOopifPdfEnabled() &&
+          rfh == pdf_frame_util::FindPdfChildFrame(pdf_rfh);
++#else
++  return false;
++#endif
+ }
+ 
+ bool ReadAnythingUntrustedPageHandler::AreActionsAllowedInTree(

@@ -1,0 +1,17 @@
+{
+  "name": "vrwatch",
+  "version": "0.1.1",
+  "private": true,
+  "license": "MPL-2.0",
+  "type": "module",
+  "description": "A video-first browser and WebXR player for Steam Frame",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --serve",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": { "three": "0.186.1" },
+  "devDependencies": { "esbuild": "0.28.2" },
+  "engines": { "node": ">=22" }
+}
