@@ -31,6 +31,16 @@ git -c user.name='Local source build' -c user.email='source@example.invalid' \
   commit -m 'Import source archive'
 ```
 
+Install the commit/push checks once per clone:
+
+```sh
+python3 scripts/setup-privacy.py
+```
+
+This downloads the pinned, checksummed Gitleaks scanner and enables this clone's
+Git hooks. Keep raw device evidence and personal configuration in ignored
+locations. See [contribution checks](CONTRIBUTING.md#keep-contributions-shareable).
+
 ```sh
 npm ci
 npm run check

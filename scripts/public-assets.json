@@ -1,0 +1,68 @@
+{
+  "branding/vrwatch-app-icon.png": {
+    "sha256": [
+      "0050f1f9bd795123597870484315c248dacde3f2984838c2792a3a5a6ae3e479"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "branding/vrwatch-symbol.png": {
+    "sha256": [
+      "0459d2f87a93218500f4315d2d2a7ff685e11ab4d43992d5bdfa262380dbbca6"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "branding/vrwatch-wordmark-color-light.png": {
+    "sha256": [
+      "6e9514234ef432a54c6d3dc603f94658fa79c10d97150b903942c656f035d7d7"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "branding/vrwatch-wordmark-color.png": {
+    "sha256": [
+      "d6d3e2efbe6303f2f00be8074f1b2300e770dd2c2e2bccdcb6ae7315ed1a89ca"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "branding/vrwatch-wordmark-mono.png": {
+    "sha256": [
+      "37a87e50c5157e5c48d8fc5c5d4ed55d8b1a09c925a5e25bfe7bc304e702039c"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "docs/images/vrwatch-home.png": {
+    "sha256": [
+      "683694dd96e8d2eaaca9010dda82dce913ad566e8b9305683d9ae04dc7bb21be"
+    ],
+    "purpose": "Implemented Home screenshot with empty history and generic links"
+  },
+  "extension/icons/icon128.png": {
+    "sha256": [
+      "04c7a60acc4ebd7b8262e61d7b40fecc2576fc171093ab594c9bceb748f4a463"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "extension/icons/icon16.png": {
+    "sha256": [
+      "a73cb139e3783ddc83d5e1565fda92c4ffa9950a2ba11e933341b8643faacd7d"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "extension/icons/icon32.png": {
+    "sha256": [
+      "f308c827374d304d6104fd28efb97d21ece0dab023481b71ddff7ddeb64395d3"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "extension/icons/icon48.png": {
+    "sha256": [
+      "d972762f7623a61f29ca2baa1a66350db223372ad937e20f76db92f58fd2446c"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  },
+  "extension/icons/icon512.png": {
+    "sha256": [
+      "d6a818af5f9f2d20180f8160bf55e2c6f327d097bddf7551baf8d5187d95599a"
+    ],
+    "purpose": "Original VRWatch branding or application icon"
+  }
+}

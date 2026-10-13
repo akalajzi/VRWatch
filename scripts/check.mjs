@@ -11,5 +11,6 @@ for (const dir of ['extension/src', 'scripts']) {
   }
 }
 for (const name of ['vrwatch', 'install.sh', 'runtime-browser']) execFileSync('bash', ['-n', `frame/${name}`], { stdio: 'inherit' });
+for (const name of await fs.readdir('.githooks')) execFileSync('bash', ['-n', `.githooks/${name}`], { stdio: 'inherit' });
 execFileSync('python3', ['-c', "import ast,pathlib; [ast.parse(p.read_text(), filename=str(p)) for directory in ('frame', 'scripts') for p in pathlib.Path(directory).glob('*.py')]"], { stdio: 'inherit' });
 console.log('Manifest versions, JavaScript, shell, and Python syntax verified.');
